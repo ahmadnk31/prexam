@@ -20,11 +20,13 @@ interface Flashcard {
 interface FlashcardStudyProps {
   flashcards: Flashcard[]
   videoId: string
+  isDocument?: boolean
 }
 
 export default function FlashcardStudy({
   flashcards,
   videoId,
+  isDocument = false,
 }: FlashcardStudyProps) {
   const [currentIndex, setCurrentIndex] = useState(0)
   const [isFlipped, setIsFlipped] = useState(false)
@@ -48,8 +50,9 @@ export default function FlashcardStudy({
 
     // Update in database
     const supabase = createClient()
+    const tableName = isDocument ? 'document_flashcards' : 'flashcards'
     await supabase
-      .from('flashcards')
+      .from(tableName)
       .update({
         ease_factor: srsData.easeFactor,
         interval: srsData.interval,

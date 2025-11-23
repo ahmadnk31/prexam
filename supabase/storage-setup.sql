@@ -87,3 +87,55 @@ USING (
   (storage.foldername(name))[1] = (auth.uid())::text
 );
 
+-- Create documents storage bucket
+INSERT INTO storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+VALUES (
+  'documents',
+  'documents',
+  true,  -- Set to true for public access, false for private
+  52428800,  -- 50MB file size limit (adjust as needed for PDF/Word/EPUB files)
+  ARRAY['application/pdf', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'application/epub+zip', 'application/msword']
+)
+ON CONFLICT (id) DO NOTHING;
+
+-- Drop existing policies if they exist (for idempotency)
+DROP POLICY IF EXISTS "Users can upload documents" ON storage.objects;
+DROP POLICY IF EXISTS "Users can read own documents" ON storage.objects;
+DROP POLICY IF EXISTS "Service role can manage documents" ON storage.objects;
+DROP POLICY IF EXISTS "Users can delete own documents" ON storage.objects;
+
+-- Policy 1: Allow authenticated users to upload documents
+CREATE POLICY "Users can upload documents"
+ON storage.objects FOR INSERT
+TO authenticated
+WITH CHECK (
+  bucket_id = 'documents' AND
+  auth.role() = 'authenticated'
+);
+
+-- Policy 2: Allow authenticated users to read their own documents
+-- Files are stored as: {user_id}/{filename}
+CREATE POLICY "Users can read own documents"
+ON storage.objects FOR SELECT
+TO authenticated
+USING (
+  bucket_id = 'documents' AND
+  (storage.foldername(name))[1] = (auth.uid())::text
+);
+
+-- Policy 3: Allow authenticated users to delete their own documents
+CREATE POLICY "Users can delete own documents"
+ON storage.objects FOR DELETE
+TO authenticated
+USING (
+  bucket_id = 'documents' AND
+  (storage.foldername(name))[1] = (auth.uid())::text
+);
+
+-- Policy 4: Allow service role full access (needed for text extraction)
+CREATE POLICY "Service role can manage documents"
+ON storage.objects FOR ALL
+TO service_role
+USING (bucket_id = 'documents')
+WITH CHECK (bucket_id = 'documents');
+

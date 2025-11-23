@@ -29,16 +29,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    // Verify user owns the video
+    // Verify user owns the video or document
     if (videoId) {
+      // Check if it's a video or document
       const { data: video } = await supabase
         .from('videos')
         .select('user_id')
         .eq('id', videoId)
         .single()
 
-      if (!video || video.user_id !== user.id) {
-        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      if (video && video.user_id === user.id) {
+        // It's a video, ownership verified
+      } else {
+        // Check if it's a document
+        const { data: document } = await supabase
+          .from('documents')
+          .select('user_id')
+          .eq('id', videoId)
+          .single()
+
+        if (!document || document.user_id !== user.id) {
+          return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        }
       }
     }
 

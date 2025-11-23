@@ -7,7 +7,8 @@ import {
   Library, 
   Upload, 
   User,
-  Menu
+  Menu,
+  FileText
 } from 'lucide-react'
 import LogoutButton from '@/components/logout-button'
 import {
@@ -62,6 +63,12 @@ export default async function DashboardLayout({
               <Button variant="ghost" className="gap-2 text-[#4B3F72] hover:bg-purple-50 hover:text-[#5A4A82] font-medium">
                 <Upload className="h-4 w-4" />
                 Upload
+              </Button>
+            </Link>
+            <Link href="/dashboard/documents/upload">
+              <Button variant="ghost" className="gap-2 text-[#4B3F72] hover:bg-purple-50 hover:text-[#5A4A82] font-medium">
+                <FileText className="h-4 w-4" />
+                Documents
               </Button>
             </Link>
           </div>
