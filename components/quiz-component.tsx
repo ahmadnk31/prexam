@@ -99,9 +99,10 @@ export default function QuizComponent({
               {score}%
             </div>
             <p className="text-lg text-gray-600">
-              You got {Object.values(answers).filter((ans, idx) => {
-                const q = questions[idx]
-                return ans?.trim().toLowerCase() === q.correct_answer.trim().toLowerCase()
+              You got {questions.filter((q) => {
+                const userAnswer = answers[q.id]?.trim().toLowerCase()
+                const correctAnswer = q.correct_answer.trim().toLowerCase()
+                return userAnswer === correctAnswer
               }).length} out of {questions.length} questions correct
             </p>
             <p className="mt-2 text-sm text-gray-500">

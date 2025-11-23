@@ -19,8 +19,6 @@ import {
   TrendingUp,
   Award,
   Clock,
-  ChevronDown,
-  HelpCircle as HelpCircleIcon
 } from 'lucide-react'
 
 export default async function Home() {
@@ -67,109 +65,86 @@ export default async function Home() {
   ]
 
   return (
-    <div className="flex min-h-screen flex-col">
+    <div className="flex min-h-screen flex-col bg-gradient-to-br from-pink-200 via-purple-200 to-yellow-200">
       {/* Navigation */}
-      <nav className="border-b border-purple-200/50 bg-white/80 backdrop-blur-md sticky top-0 z-50 shadow-sm">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <Link href="/" className="flex items-center gap-2 text-2xl font-bold text-[#4B3F72] hover:text-[#5A4A82] transition-colors">
-            <Brain className="h-7 w-7 text-[#4B3F72]" />
-            Prexam
-          </Link>
-          <div className="flex items-center gap-3">
-            <Link href="/login">
-              <Button variant="ghost" className="text-[#4B3F72] hover:bg-purple-50 font-medium">Sign In</Button>
+      <nav className="sticky top-4 z-50 px-4 sm:px-6 pt-4">
+        <div className="mx-auto max-w-7xl">
+          <div className="flex items-center justify-between rounded-2xl border border-purple-200/50 bg-white/95 backdrop-blur-md shadow-lg px-6 py-4">
+            {/* Logo */}
+            <Link href="/" className="flex items-center gap-2 text-xl font-bold text-[#4B3F72] hover:text-[#5A4A82] transition-colors">
+              <Brain className="h-6 w-6 text-[#4B3F72]" />
+              Prexam
             </Link>
-            <Link href="/signup">
-              <Button className="bg-[#FBBF24] hover:bg-[#F59E0B] text-[#1F2937] font-semibold shadow-lg hover:shadow-xl transition-all">Sign up for free</Button>
-            </Link>
+
+            {/* Right Side Actions */}
+            <div className="flex items-center gap-3">
+              <Link href="/login">
+                <Button variant="ghost" className="text-[#4B3F72] hover:bg-purple-50 font-medium">Log in</Button>
+              </Link>
+              <Link href="/signup">
+                <Button className="bg-[#FBBF24] hover:bg-[#F59E0B] text-[#1F2937] font-semibold shadow-md hover:shadow-lg transition-all">Sign up</Button>
+              </Link>
+            </div>
           </div>
         </div>
       </nav>
 
       {/* Hero Section */}
-      <section className="relative overflow-hidden gradient-outseta py-24 sm:py-32">
-        {/* Animated background elements */}
-        <div className="absolute inset-0 overflow-hidden">
-          <div className="absolute -top-40 -right-40 h-80 w-80 rounded-full bg-purple-300/20 blur-3xl animate-pulse-slow"></div>
-          <div className="absolute -bottom-40 -left-40 h-80 w-80 rounded-full bg-yellow-300/20 blur-3xl animate-pulse-slow delay-300"></div>
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 h-96 w-96 rounded-full bg-purple-200/10 blur-3xl animate-float"></div>
-        </div>
-
+      <section className="relative overflow-hidden py-20 sm:py-28">
         <div className="relative mx-auto max-w-7xl px-6">
           <div className="mx-auto max-w-4xl text-center">
-            <div className="mb-8 inline-flex items-center gap-2 rounded-full border border-purple-200 bg-white/90 backdrop-blur-sm px-5 py-2.5 text-sm font-medium shadow-sm animate-fade-in-up delay-100">
-              <Zap className="h-4 w-4 text-[#FBBF24] animate-pulse" />
-              <span className="text-[#4B3F72]">AI-Powered Study Platform</span>
-            </div>
-            <h1 className="mb-8 text-5xl font-bold tracking-tight text-[#4B3F72] sm:text-6xl lg:text-7xl animate-fade-in-up delay-200">
+            {/* Main Headline - Large and Bold */}
+            <h1 className="mb-6 text-6xl font-bold tracking-tight text-[#4B3F72] sm:text-7xl lg:text-8xl animate-fade-in-up delay-200">
               The Study Operating System
           </h1>
-            <p className="mb-10 text-xl text-purple-700/80 sm:text-2xl font-medium leading-relaxed animate-fade-in-up delay-300">
-              Upload any video, get instant flashcards and practice questions. 
-              <strong className="text-[#4B3F72]"> Study smarter with AI-powered learning tools</strong> that transform your videos into comprehensive study materials.
+            
+            {/* Sub-headline - Descriptive text */}
+            <p className="mb-10 text-xl text-[#4B3F72]/90 sm:text-2xl font-normal leading-relaxed max-w-3xl mx-auto animate-fade-in-up delay-300">
+              Upload any video, get instant flashcards and practice questions. Ditch the manual note-taking and transform your videos into comprehensive study materials using AI-powered learning tools.
             </p>
-            <div className="flex flex-col items-center justify-center gap-4 sm:flex-row animate-fade-in-up delay-400">
+            
+            {/* CTA Buttons - Two yellow buttons centered */}
+            <div className="flex flex-col items-center justify-center gap-4 sm:flex-row sm:gap-4 animate-fade-in-up delay-400">
               <Link href="/signup">
-                <Button size="lg" className="group bg-[#FBBF24] hover:bg-[#F59E0B] text-[#1F2937] font-semibold shadow-xl hover:shadow-2xl transition-all hover:scale-105 text-lg px-8 py-6">
+                <Button size="lg" className="group bg-[#FBBF24] hover:bg-[#F59E0B] text-[#1F2937] font-semibold shadow-lg hover:shadow-xl transition-all hover:scale-105 text-lg px-8 py-6">
                   Sign up for free
-                  <ArrowRight className="ml-2 h-5 w-5 transition-transform group-hover:translate-x-1" />
                 </Button>
               </Link>
               <Link href="#features">
-                <Button size="lg" variant="outline" className="text-lg px-8 py-6 border-2 border-[#4B3F72] text-[#4B3F72] hover:bg-[#4B3F72] hover:text-white font-semibold transition-all hover:scale-105">
-                  <PlayCircle className="mr-2 h-5 w-5" />
-                  See How It Works
+                <Button size="lg" className="group bg-[#FBBF24] hover:bg-[#F59E0B] text-[#1F2937] font-semibold shadow-lg hover:shadow-xl transition-all hover:scale-105 text-lg px-8 py-6">
+                  Is Prexam for me?
                 </Button>
               </Link>
-            </div>
-            <p className="mt-8 text-sm text-purple-700/70 font-medium animate-fade-in-up delay-500">
-              No credit card required • Free forever • Start in seconds
-            </p>
-            
-            {/* Trust Indicators */}
-            <div className="mt-12 flex flex-wrap items-center justify-center gap-8 animate-fade-in-up delay-600">
-              <div className="flex items-center gap-2 text-sm text-purple-700/80">
-                <Shield className="h-5 w-5 text-green-600" />
-                <span className="font-medium">Secure & Private</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm text-purple-700/80">
-                <Lock className="h-5 w-5 text-blue-600" />
-                <span className="font-medium">Encrypted Data</span>
-              </div>
-              <div className="flex items-center gap-2 text-sm text-purple-700/80">
-                <Award className="h-5 w-5 text-yellow-600" />
-                <span className="font-medium">Trusted by 10,000+ Students</span>
-              </div>
-            </div>
-
-            {/* Social Proof Stats */}
-            <div className="mt-12 grid grid-cols-2 gap-6 sm:grid-cols-4 animate-fade-in-up delay-700">
-              <div className="text-center">
-                <div className="text-3xl font-bold text-[#4B3F72]">10K+</div>
-                <div className="text-sm text-purple-700/70 font-medium">Active Users</div>
-              </div>
-              <div className="text-center">
-                <div className="text-3xl font-bold text-[#4B3F72]">50K+</div>
-                <div className="text-sm text-purple-700/70 font-medium">Videos Processed</div>
-              </div>
-              <div className="text-center">
-                <div className="text-3xl font-bold text-[#4B3F72]">4.9/5</div>
-                <div className="flex items-center justify-center gap-1 text-sm text-purple-700/70">
-                  <Star className="h-4 w-4 fill-yellow-400 text-yellow-400" />
-                  <span className="font-medium">User Rating</span>
-                </div>
-              </div>
-              <div className="text-center">
-                <div className="text-3xl font-bold text-[#4B3F72]">99.9%</div>
-                <div className="text-sm text-purple-700/70 font-medium">Uptime</div>
-              </div>
             </div>
           </div>
         </div>
       </section>
 
+      {/* Integrations Section - Before Dashboard */}
+      <section className="py-12">
+        <div className="mx-auto max-w-7xl px-6">
+          <div className="text-center mb-8">
+            <p className="text-lg text-[#4B3F72] font-medium">
+              Trusted by 10,000+ Students from around the world{' '}
+              <Link href="#" className="text-[#4B3F72] hover:underline font-semibold">View all →</Link>
+            </p>
+          </div>
+          {/* Integration Logos - Placeholder grid */}
+          <div className="flex flex-wrap items-center justify-center gap-8 opacity-60">
+            <div className="text-2xl font-bold text-[#4B3F72]">Harvard</div>
+            <div className="text-2xl font-bold text-[#4B3F72]">MIT</div>
+            <div className="text-2xl font-bold text-[#4B3F72]">Oxford</div>
+            <div className="text-2xl font-bold text-[#4B3F72]">Cambridge</div>
+            <div className="text-2xl font-bold text-[#4B3F72]">Oxford</div>
+                <div className="text-2xl font-bold text-[#4B3F72]">Stanford</div>
+                <div className="text-2xl font-bold text-[#4B3F72]">Yale</div>
+                <div className="text-2xl font-bold text-[#4B3F72]">Columbia</div>
+          </div>
+        </div>
+      </section>
+
       {/* Dashboard Preview Section */}
-      <section className="relative -mt-20 pb-24">
+      <section className="relative pb-24">
         <div className="mx-auto max-w-7xl px-6">
           <div className="relative overflow-hidden rounded-2xl border-4 border-purple-200/50 bg-gradient-to-br from-[#4B3F72] to-[#5A4A82] shadow-2xl animate-fade-in-up delay-300 hover:shadow-3xl transition-shadow duration-500">
             {/* Dashboard Header */}
@@ -291,7 +266,7 @@ export default async function Home() {
       </section>
 
       {/* Testimonials Section - Before Features */}
-      <section className="py-20 bg-gradient-to-b from-white to-purple-50/30">
+      <section className="py-20">
         <div className="mx-auto max-w-7xl px-6">
           <div className="mb-12 text-center animate-fade-in-up delay-100">
             <h2 className="mb-4 text-4xl font-bold text-[#4B3F72]">Loved by Students Worldwide</h2>
@@ -362,10 +337,7 @@ export default async function Home() {
       </section>
 
       {/* Features Section */}
-      <section id="features" className="py-24 bg-white relative overflow-hidden">
-        {/* Decorative background elements */}
-        <div className="absolute top-0 right-0 h-96 w-96 rounded-full bg-purple-100/30 blur-3xl -translate-y-1/2 translate-x-1/2"></div>
-        <div className="absolute bottom-0 left-0 h-96 w-96 rounded-full bg-yellow-100/30 blur-3xl translate-y-1/2 -translate-x-1/2"></div>
+      <section id="features" className="py-24 relative overflow-hidden">
 
         <div className="relative mx-auto max-w-7xl px-6">
           <div className="mb-20 text-center animate-fade-in-up delay-100">
@@ -396,9 +368,7 @@ export default async function Home() {
       </section>
 
       {/* How It Works */}
-      <section className="py-24 gradient-outseta-subtle relative overflow-hidden">
-        {/* Animated background gradient */}
-        <div className="absolute inset-0 animate-gradient bg-gradient-to-br from-purple-50 via-yellow-50 to-purple-50 opacity-50"></div>
+      <section className="py-24 relative overflow-hidden">
         
         <div className="relative mx-auto max-w-7xl px-6">
           <div className="mb-20 text-center animate-fade-in-up delay-100">
@@ -438,7 +408,7 @@ export default async function Home() {
       </section>
 
       {/* Benefits/Why Choose Section */}
-      <section className="py-24 bg-gradient-to-b from-white to-purple-50/50">
+      <section className="py-24">
         <div className="mx-auto max-w-7xl px-6">
           <div className="mb-16 text-center animate-fade-in-up delay-100">
             <h2 className="mb-6 text-5xl font-bold text-[#4B3F72]">Why Choose Prexam?</h2>
