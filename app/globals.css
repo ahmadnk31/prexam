@@ -1,26 +1,261 @@
 @import "tailwindcss";
+@import "plyr/dist/plyr.css";
+
+@theme {
+  /* Outseta-inspired color palette */
+  --color-background: hsl(0 0% 100%);
+  --color-foreground: hsl(260 20% 15%);
+  --color-card: hsl(0 0% 100%);
+  --color-card-foreground: hsl(260 20% 15%);
+  --color-popover: hsl(0 0% 100%);
+  --color-popover-foreground: hsl(260 20% 15%);
+  --color-primary: hsl(260 45% 35%);
+  --color-primary-foreground: hsl(0 0% 100%);
+  --color-secondary: hsl(260 10% 96%);
+  --color-secondary-foreground: hsl(260 20% 15%);
+  --color-muted: hsl(260 10% 96%);
+  --color-muted-foreground: hsl(260 15% 45%);
+  --color-accent: hsl(45 95% 55%);
+  --color-accent-foreground: hsl(260 20% 15%);
+  --color-destructive: hsl(0 84.2% 60.2%);
+  --color-destructive-foreground: hsl(0 0% 100%);
+  --color-border: hsl(260 15% 90%);
+  --color-input: hsl(260 15% 95%);
+  --color-ring: hsl(260 45% 35%);
+  --radius: 0.75rem;
+  
+  /* Custom Outseta colors */
+  --color-outseta-purple: hsl(260 45% 35%);
+  --color-outseta-yellow: hsl(45 95% 55%);
+  --color-outseta-gradient-start: hsl(320 60% 95%);
+  --color-outseta-gradient-end: hsl(45 90% 90%);
+}
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: 0 0% 100%;
+  --foreground: 260 20% 15%;
+  --card: 0 0% 100%;
+  --card-foreground: 260 20% 15%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 260 20% 15%;
+  --primary: 260 45% 35%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 260 10% 96%;
+  --secondary-foreground: 260 20% 15%;
+  --muted: 260 10% 96%;
+  --muted-foreground: 260 15% 45%;
+  --accent: 45 95% 55%;
+  --accent-foreground: 260 20% 15%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 260 15% 90%;
+  --input: 260 15% 95%;
+  --ring: 260 45% 35%;
+  --radius: 0.75rem;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+.dark {
+  --background: 222.2 84% 4.9%;
+  --foreground: 210 40% 98%;
+  --card: 222.2 84% 4.9%;
+  --card-foreground: 210 40% 98%;
+  --popover: 222.2 84% 4.9%;
+  --popover-foreground: 210 40% 98%;
+  --primary: 210 40% 98%;
+  --primary-foreground: 222.2 47.4% 11.2%;
+  --secondary: 217.2 32.6% 17.5%;
+  --secondary-foreground: 210 40% 98%;
+  --muted: 217.2 32.6% 17.5%;
+  --muted-foreground: 215 20.2% 65.1%;
+  --accent: 217.2 32.6% 17.5%;
+  --accent-foreground: 210 40% 98%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 217.2 32.6% 17.5%;
+  --input: 217.2 32.6% 17.5%;
+  --ring: 212.7 26.8% 83.9%;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
+* {
+  border-color: hsl(var(--border));
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+}
+
+/* Outseta-inspired gradient backgrounds */
+.gradient-outseta {
+  background: linear-gradient(135deg, hsl(320 60% 95%) 0%, hsl(45 90% 90%) 100%);
+}
+
+.gradient-outseta-subtle {
+  background: linear-gradient(135deg, hsl(320 40% 98%) 0%, hsl(45 50% 97%) 100%);
+}
+
+/* Flashcard flip animation */
+.flashcard-container {
+  perspective: 1000px;
+  width: 100%;
+  height: 400px;
+  cursor: pointer;
+}
+
+.flashcard-inner {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.6s;
+  transform-style: preserve-3d;
+}
+
+.flashcard-inner.flipped {
+  transform: rotateY(180deg);
+}
+
+.flashcard-front,
+.flashcard-back {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.flashcard-back {
+  transform: rotateY(180deg);
+}
+
+/* Landing page animations */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(30px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes slideInLeft {
+  from {
+    opacity: 0;
+    transform: translateX(-50px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(50px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-20px);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+@keyframes gradient {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+.animate-fade-in-up {
+  animation: fadeInUp 0.6s ease-out forwards;
+}
+
+.animate-fade-in {
+  animation: fadeIn 0.8s ease-out forwards;
+}
+
+.animate-slide-in-left {
+  animation: slideInLeft 0.8s ease-out forwards;
+}
+
+.animate-slide-in-right {
+  animation: slideInRight 0.8s ease-out forwards;
+}
+
+.animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+.animate-pulse-slow {
+  animation: pulse 3s ease-in-out infinite;
+}
+
+.animate-gradient {
+  background-size: 200% 200%;
+  animation: gradient 8s ease infinite;
+}
+
+.delay-100 {
+  animation-delay: 0.1s;
+  opacity: 0;
+}
+
+.delay-200 {
+  animation-delay: 0.2s;
+  opacity: 0;
+}
+
+.delay-300 {
+  animation-delay: 0.3s;
+  opacity: 0;
+}
+
+.delay-400 {
+  animation-delay: 0.4s;
+  opacity: 0;
+}
+
+.delay-500 {
+  animation-delay: 0.5s;
+  opacity: 0;
+}
+
+.delay-600 {
+  animation-delay: 0.6s;
+  opacity: 0;
 }
