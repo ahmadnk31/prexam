@@ -95,6 +95,9 @@ export async function POST(req: NextRequest) {
       chunks.push(documentText.slice(i, i + chunkSize))
     }
 
+    // Get document language (default to 'en' if not set)
+    const documentLanguage = document.language || 'en'
+
     // Generate questions from all chunks
     const allQuestions: Array<{
       type: string
@@ -105,7 +108,7 @@ export async function POST(req: NextRequest) {
     }> = []
     
     for (const chunk of chunks) {
-      const questions = await generateQuestions([chunk], count)
+      const questions = await generateQuestions([chunk], count, documentLanguage)
       allQuestions.push(...questions)
     }
 

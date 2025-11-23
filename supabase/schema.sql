@@ -108,6 +108,17 @@ CREATE TABLE IF NOT EXISTS public.summaries (
   )
 );
 
+-- Create partial unique indexes for summaries
+-- One summary per user per video (when video_id is not null)
+CREATE UNIQUE INDEX IF NOT EXISTS summaries_video_id_user_id_unique 
+ON public.summaries(video_id, user_id) 
+WHERE video_id IS NOT NULL;
+
+-- One summary per user per document (when document_id is not null)
+CREATE UNIQUE INDEX IF NOT EXISTS summaries_document_id_user_id_unique 
+ON public.summaries(document_id, user_id) 
+WHERE document_id IS NOT NULL;
+
 -- Documents table
 CREATE TABLE IF NOT EXISTS public.documents (
   id UUID DEFAULT uuid_generate_v4() PRIMARY KEY,
@@ -120,6 +131,7 @@ CREATE TABLE IF NOT EXISTS public.documents (
   status TEXT DEFAULT 'uploading' CHECK (status IN ('uploading', 'processing', 'ready', 'error')),
   extracted_text TEXT, -- Full extracted text content
   page_count INTEGER, -- For PDFs
+  language TEXT, -- ISO 639-1 language code (e.g., 'en', 'nl', 'de')
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );

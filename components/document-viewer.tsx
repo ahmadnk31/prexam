@@ -3,7 +3,9 @@
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Button } from '@/components/ui/button'
 import { useState, useCallback, useRef, useEffect } from 'react'
+import { ArrowUp } from 'lucide-react'
 import TextSelectionToolbar from '@/components/text-selection-toolbar'
 
 interface DocumentChunk {
@@ -32,16 +34,13 @@ export default function DocumentViewer({
   documentId,
 }: DocumentViewerProps) {
   const scrollAreaRef = useRef<HTMLDivElement>(null)
+  const mobileScrollRef = useRef<HTMLDivElement>(null)
   const [selectedText, setSelectedText] = useState('')
   const [selectionPosition, setSelectionPosition] = useState<{ x: number; y: number } | null>(null)
-  const [isDraggingToolbar, setIsDraggingToolbar] = useState(false)
+  const [showScrollTop, setShowScrollTop] = useState(false)
 
   // Handle text selection
   const handleMouseUp = useCallback((event: MouseEvent) => {
-    if (isDraggingToolbar) {
-      setIsDraggingToolbar(false)
-      return
-    }
 
     const selection = window.getSelection()
     if (!selection || selection.rangeCount === 0) {
@@ -55,8 +54,13 @@ export default function DocumentViewer({
     const rect = range.getBoundingClientRect()
 
     // Check if selection is within the document viewer
-    const documentPanelElement = scrollAreaRef.current?.closest('.document-viewer')
-    if (!documentPanelElement || !documentPanelElement.contains(range.commonAncestorContainer)) {
+    // Try mobile scroll container first, then desktop ScrollArea
+    const mobileContainer = mobileScrollRef.current
+    const desktopContainer = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]')
+    const scrollContainer = mobileContainer || desktopContainer
+    const documentPanelElement = (scrollAreaRef.current || mobileScrollRef.current)?.closest('.document-viewer')
+    
+    if (!documentPanelElement || !scrollContainer || !scrollContainer.contains(range.commonAncestorContainer)) {
       setSelectionPosition(null)
       setSelectedText('')
       return
@@ -79,7 +83,7 @@ export default function DocumentViewer({
       x: rect.left + rect.width / 2,
       y: rect.bottom,
     })
-  }, [isDraggingToolbar])
+  }, [])
 
   useEffect(() => {
     window.document.addEventListener('mouseup', handleMouseUp)
@@ -87,6 +91,32 @@ export default function DocumentViewer({
       window.document.removeEventListener('mouseup', handleMouseUp)
     }
   }, [handleMouseUp])
+
+  // Handle scroll to show/hide scroll-to-top button (for desktop ScrollArea)
+  useEffect(() => {
+    const scrollContainer = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]')
+    if (!scrollContainer) return
+
+    const handleScroll = () => {
+      setShowScrollTop((scrollContainer as HTMLElement).scrollTop > 300)
+    }
+
+    scrollContainer.addEventListener('scroll', handleScroll)
+    return () => scrollContainer.removeEventListener('scroll', handleScroll)
+  }, [])
+
+  const scrollToTop = () => {
+    // Try mobile scroll container first
+    if (mobileScrollRef.current) {
+      mobileScrollRef.current.scrollTo({ top: 0, behavior: 'smooth' })
+      return
+    }
+    // Try desktop ScrollArea viewport
+    const scrollContainer = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]')
+    if (scrollContainer) {
+      (scrollContainer as HTMLElement).scrollTo({ top: 0, behavior: 'smooth' })
+    }
+  }
 
   if (document.status === 'uploading' || document.status === 'processing') {
     return (
@@ -147,41 +177,90 @@ export default function DocumentViewer({
 
   return (
     <Card className="h-full flex flex-col document-viewer">
-      <CardHeader className="flex-shrink-0">
-        <CardTitle className="flex items-center justify-between">
+      <CardHeader className="flex-shrink-0 px-4 sm:px-6">
+        <CardTitle className="flex items-center justify-between text-base sm:text-lg">
           <span>Document Content</span>
           {document.page_count && (
-            <span className="text-sm font-normal text-purple-600/70">
+            <span className="text-xs sm:text-sm font-normal text-purple-600/70">
               {document.page_count} {document.page_count === 1 ? 'page' : 'pages'}
             </span>
           )}
         </CardTitle>
       </CardHeader>
-      <CardContent className="flex-1 min-h-0 flex flex-col">
-        <ScrollArea className="flex-1" ref={scrollAreaRef}>
-          <div className="prose prose-sm max-w-none pr-4">
+      <CardContent className="flex-1 min-h-0 flex flex-col p-0 relative">
+        {/* Mobile: Fixed height with overflow-y */}
+        <div 
+          className="md:hidden h-[60vh] overflow-y-auto px-4 py-4"
+          ref={mobileScrollRef}
+          onScroll={(e) => {
+            const target = e.target as HTMLElement
+            setShowScrollTop(target.scrollTop > 300)
+          }}
+          style={{ 
+            scrollbarWidth: 'thin', 
+            scrollbarColor: '#c4b5fd transparent',
+            WebkitOverflowScrolling: 'touch'
+          }}
+        >
+          <div className="prose prose-sm max-w-none">
             {chunks.length > 0 ? (
               <div className="space-y-6">
                 {chunks.map((chunk) => (
-                  <div key={chunk.id} className="space-y-2">
+                  <div key={chunk.id} className="space-y-2 scroll-mt-4" id={`chunk-${chunk.chunk_index}`}>
                     {chunk.page_number && (
-                      <div className="text-xs font-medium text-purple-600/70 border-b border-purple-200 pb-1">
+                      <div className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm text-xs font-medium text-purple-600/70 border-b border-purple-200 pb-2 pt-2 -mt-2">
                         Page {chunk.page_number}
                       </div>
                     )}
-                    <p className="text-sm leading-relaxed text-gray-700 whitespace-pre-wrap">
+                    <p className="text-sm leading-relaxed text-gray-700 whitespace-pre-wrap break-words">
                       {chunk.content}
                     </p>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-sm leading-relaxed text-gray-700 whitespace-pre-wrap">
+              <p className="text-sm leading-relaxed text-gray-700 whitespace-pre-wrap break-words">
+                {content}
+              </p>
+            )}
+          </div>
+        </div>
+
+        {/* Desktop: Use ScrollArea */}
+        <ScrollArea className="hidden md:flex flex-1 min-h-0" ref={scrollAreaRef}>
+          <div className="prose prose-sm max-w-none px-4 sm:px-6 py-4">
+            {chunks.length > 0 ? (
+              <div className="space-y-6">
+                {chunks.map((chunk) => (
+                  <div key={chunk.id} className="space-y-2 scroll-mt-4" id={`chunk-${chunk.chunk_index}`}>
+                    {chunk.page_number && (
+                      <div className="sticky top-0 z-10 bg-white/95 backdrop-blur-sm text-xs font-medium text-purple-600/70 border-b border-purple-200 pb-2 pt-2 -mt-2">
+                        Page {chunk.page_number}
+                      </div>
+                    )}
+                    <p className="text-sm sm:text-base leading-relaxed text-gray-700 whitespace-pre-wrap break-words">
+                      {chunk.content}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm sm:text-base leading-relaxed text-gray-700 whitespace-pre-wrap break-words">
                 {content}
               </p>
             )}
           </div>
         </ScrollArea>
+        {showScrollTop && (
+          <Button
+            onClick={scrollToTop}
+            size="sm"
+            className="absolute bottom-4 right-4 sm:bottom-6 sm:right-6 rounded-full h-10 w-10 p-0 shadow-lg bg-purple-600 hover:bg-purple-700 text-white z-20"
+            aria-label="Scroll to top"
+          >
+            <ArrowUp className="h-5 w-5" />
+          </Button>
+        )}
       </CardContent>
       {selectionPosition && selectedText && (
         <TextSelectionToolbar
@@ -193,7 +272,6 @@ export default function DocumentViewer({
             window.getSelection()?.removeAllRanges()
           }}
           videoId={documentId}
-          onDragStart={() => setIsDraggingToolbar(true)}
         />
       )}
     </Card>

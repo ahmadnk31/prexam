@@ -168,15 +168,37 @@ export default function DocumentAIToolsPanel({ documentId }: DocumentAIToolsPane
       </CardHeader>
       <CardContent className="flex-1 min-h-0 flex flex-col">
         <Tabs defaultValue="flashcards" className="w-full h-full flex flex-col">
-          <TabsList className="grid w-full grid-cols-4 flex-shrink-0">
-            <TabsTrigger value="flashcards">Flashcards</TabsTrigger>
-            <TabsTrigger value="questions">Questions</TabsTrigger>
-            <TabsTrigger value="notes">Notes</TabsTrigger>
-            <TabsTrigger value="summary">Summary</TabsTrigger>
+          <TabsList className="w-full flex flex-nowrap overflow-x-auto scrollbar-hide h-auto p-1.5 bg-muted/50">
+            <TabsTrigger 
+              value="flashcards" 
+              className="text-xs sm:text-sm py-2.5 px-4 sm:px-6 whitespace-nowrap flex-shrink-0 min-w-fit"
+            >
+              <span className="hidden sm:inline">Flashcards</span>
+              <span className="sm:hidden">Cards</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="questions" 
+              className="text-xs sm:text-sm py-2.5 px-4 sm:px-6 whitespace-nowrap flex-shrink-0 min-w-fit"
+            >
+              <span className="hidden sm:inline">Questions</span>
+              <span className="sm:hidden">Quiz</span>
+            </TabsTrigger>
+            <TabsTrigger 
+              value="notes" 
+              className="text-xs sm:text-sm py-2.5 px-4 sm:px-6 whitespace-nowrap flex-shrink-0 min-w-fit"
+            >
+              Notes
+            </TabsTrigger>
+            <TabsTrigger 
+              value="summary" 
+              className="text-xs sm:text-sm py-2.5 px-4 sm:px-6 whitespace-nowrap flex-shrink-0 min-w-fit"
+            >
+              Summary
+            </TabsTrigger>
           </TabsList>
 
-          <TabsContent value="flashcards" className="flex-1 min-h-0 flex flex-col space-y-4 pt-4">
-            <div className="space-y-2 flex-1 flex flex-col">
+          <TabsContent value="flashcards" className="flex-1 min-h-0 flex flex-col space-y-4 pt-4 overflow-hidden">
+            <div className="space-y-2 flex-1 flex flex-col overflow-hidden">
               <div className="flex items-center justify-between flex-shrink-0">
                 <p className="text-sm text-gray-600">
                   {flashcards.length > 0
@@ -197,13 +219,13 @@ export default function DocumentAIToolsPanel({ documentId }: DocumentAIToolsPane
               </div>
 
               {loadingFlashcards ? (
-                <div className="space-y-2 flex-1">
+                <div className="space-y-2 flex-1 overflow-y-auto">
                   <Skeleton className="h-20 w-full" />
                   <Skeleton className="h-20 w-full" />
                 </div>
               ) : flashcards.length > 0 ? (
-                <div className="space-y-3 flex-1 flex flex-col">
-                  <ScrollArea className="flex-1 rounded-lg border p-4">
+                <div className="space-y-3 flex-1 flex flex-col overflow-hidden">
+                  <ScrollArea className="flex-1 min-h-0 rounded-lg border p-4">
                     <div className="space-y-3">
                       {flashcards.map((flashcard, index) => (
                         <Card key={flashcard.id} className="p-3">

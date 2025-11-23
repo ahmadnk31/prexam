@@ -170,14 +170,20 @@ export default function TextSelectionToolbar({
         }),
       })
 
+      const data = await response.json()
+
       if (!response.ok) {
-        throw new Error('Failed to analyze text')
+        throw new Error(data.error || 'Failed to analyze text')
       }
 
-      const data = await response.json()
+      if (!data.result) {
+        throw new Error('No result returned from server')
+      }
+
       setResult(data.result)
-    } catch (error) {
-      setResult('Error: Failed to analyze text. Please try again.')
+    } catch (error: any) {
+      console.error('Error analyzing text:', error)
+      setResult(`Error: ${error.message || 'Failed to analyze text. Please try again.'}`)
     } finally {
       setLoading(false)
     }

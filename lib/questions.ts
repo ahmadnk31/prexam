@@ -15,9 +15,14 @@ export interface Question {
  */
 export async function generateQuestions(
   transcriptSegments: string[],
-  count: number = 20
+  count: number = 20,
+  language: string = 'en'
 ): Promise<Question[]> {
   const combinedTranscript = transcriptSegments.join('\n\n')
+
+  const languageInstruction = language !== 'en' 
+    ? `\n\nIMPORTANT: Respond in the same language as the transcript (language code: ${language}). All questions, options, answers, and explanations should be in that language.`
+    : ''
 
   const prompt = `Create ${count} diverse educational questions from the following transcript.
 Generate a mix of question types:
@@ -52,7 +57,7 @@ Example:
 ]
 
 Transcript:
-${combinedTranscript}
+${combinedTranscript}${languageInstruction}
 
 Return ONLY the JSON array, no additional text.`
 
@@ -63,7 +68,9 @@ Return ONLY the JSON array, no additional text.`
         {
           role: 'system',
           content:
-            'You are an educational assistant that creates high-quality questions from transcripts. Always return a valid JSON object with a "questions" array.',
+            language !== 'en'
+              ? `You are an educational assistant that creates high-quality questions from transcripts. Always respond in the same language as the transcript (language code: ${language}). Always return a valid JSON object with a "questions" array.`
+              : 'You are an educational assistant that creates high-quality questions from transcripts. Always return a valid JSON object with a "questions" array.',
         },
         {
           role: 'user',

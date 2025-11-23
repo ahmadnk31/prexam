@@ -81,13 +81,19 @@ export async function POST(req: NextRequest) {
       ? documentText.slice(0, maxLength) + '\n\n[Content truncated...]'
       : documentText
 
+    // Get document language (default to 'en' if not set)
+    const documentLanguage = document.language || 'en'
+    const languageInstruction = documentLanguage !== 'en'
+      ? ` Respond in the same language as the document (language code: ${documentLanguage}).`
+      : ''
+
     // Generate summary using OpenAI
     const completion = await openai.chat.completions.create({
       model: 'gpt-4o-mini',
       messages: [
         {
           role: 'system',
-          content: 'You are a helpful assistant that creates comprehensive summaries of documents. Create a well-structured summary with key points, main ideas, and important details.',
+          content: `You are a helpful assistant that creates comprehensive summaries of documents. Create a well-structured summary with key points, main ideas, and important details.${languageInstruction}`,
         },
         {
           role: 'user',

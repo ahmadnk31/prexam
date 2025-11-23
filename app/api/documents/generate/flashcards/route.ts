@@ -95,10 +95,13 @@ export async function POST(req: NextRequest) {
       chunks.push(documentText.slice(i, i + chunkSize))
     }
 
+    // Get document language (default to 'en' if not set)
+    const documentLanguage = document.language || 'en'
+
     // Generate flashcards from all chunks
     const allFlashcards: Array<{ front: string; back: string }> = []
     for (const chunk of chunks) {
-      const flashcards = await generateFlashcards([chunk])
+      const flashcards = await generateFlashcards([chunk], documentLanguage)
       allFlashcards.push(...flashcards)
     }
 

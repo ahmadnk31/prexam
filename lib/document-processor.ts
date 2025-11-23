@@ -5,6 +5,7 @@ import { PDFLoader } from '@langchain/community/document_loaders/fs/pdf'
 import { writeFileSync, unlinkSync } from 'fs'
 import { join } from 'path'
 import { tmpdir } from 'os'
+import { detectLanguage } from './language-detection'
 
 // Helper to convert buffer to stream
 function bufferToStream(buffer: Buffer) {
@@ -199,12 +200,21 @@ export async function processDocument(documentId: string) {
       }
     }
 
-    // Update document with extracted text and status
+    // Detect language of the extracted text
+    let detectedLanguage = 'en' // Default to English
+    try {
+      detectedLanguage = await detectLanguage(extractedText)
+    } catch (error) {
+      console.error('Error detecting language, defaulting to English:', error)
+    }
+
+    // Update document with extracted text, language, and status
     await serviceClient
       .from('documents')
       .update({
         extracted_text: extractedText,
         page_count: pageCount,
+        language: detectedLanguage,
         status: 'ready',
       })
       .eq('id', documentId)

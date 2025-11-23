@@ -9,9 +9,14 @@ export interface Flashcard {
  * Generates flashcards from transcript segments using OpenAI
  */
 export async function generateFlashcards(
-  transcriptSegments: string[]
+  transcriptSegments: string[],
+  language: string = 'en'
 ): Promise<Flashcard[]> {
   const combinedTranscript = transcriptSegments.join('\n\n')
+
+  const languageInstruction = language !== 'en' 
+    ? `\n\nIMPORTANT: Respond in the same language as the transcript (language code: ${language}). All flashcards should be in that language.`
+    : ''
 
   const prompt = `Create educational flashcards from the following transcript. 
 Generate 15-25 high-quality flashcards that cover key concepts, definitions, facts, and important information.
@@ -28,7 +33,7 @@ Example:
 ]
 
 Transcript:
-${combinedTranscript}
+${combinedTranscript}${languageInstruction}
 
 Return ONLY the JSON array, no additional text.`
 
@@ -39,7 +44,9 @@ Return ONLY the JSON array, no additional text.`
         {
           role: 'system',
           content:
-            'You are an educational assistant that creates high-quality flashcards from transcripts. Always return a valid JSON object with a "flashcards" array.',
+            language !== 'en'
+              ? `You are an educational assistant that creates high-quality flashcards from transcripts. Always respond in the same language as the transcript (language code: ${language}). Always return a valid JSON object with a "flashcards" array.`
+              : 'You are an educational assistant that creates high-quality flashcards from transcripts. Always return a valid JSON object with a "flashcards" array.',
         },
         {
           role: 'user',
