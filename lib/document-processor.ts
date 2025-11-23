@@ -1,10 +1,8 @@
 import { createServiceClient } from '@/supabase/service'
 import mammoth from 'mammoth'
 import { Readable } from 'stream'
-import { PDFLoader } from '@langchain/community/document_loaders/fs/pdf'
-import { writeFileSync, unlinkSync } from 'fs'
-import { join } from 'path'
-import { tmpdir } from 'os'
+// @ts-ignore - pdf-parse doesn't have TypeScript definitions
+import pdfParse from 'pdf-parse'
 import { detectLanguage } from './language-detection'
 
 // Helper to convert buffer to stream
@@ -13,42 +11,12 @@ function bufferToStream(buffer: Buffer) {
 }
 
 async function extractPDFText(fileBuffer: Buffer): Promise<{ text: string; pageCount: number }> {
-  // Use LangChain PDFLoader for reliable PDF text extraction
-  // Create a temporary file since PDFLoader works best with file paths
-  const tempFilePath = join(tmpdir(), `pdf-${Date.now()}-${Math.random().toString(36).substring(7)}.pdf`)
+  // Use pdf-parse for reliable PDF text extraction
+  const data = await pdfParse(fileBuffer)
   
-  try {
-    // Write buffer to temporary file
-    writeFileSync(tempFilePath, fileBuffer)
-    
-    // Create PDFLoader with the file path
-    const loader = new PDFLoader(tempFilePath, {
-      splitPages: false, // Get all pages as one document
-    })
-    
-    // Load the document
-    const docs = await loader.load()
-    
-    // Combine all pages into one text
-    const text = docs.map(doc => doc.pageContent).join('\n\n')
-    
-    // Get page count from metadata if available, otherwise estimate
-    const pageCount = docs.length > 0 && docs[0].metadata?.pdf?.totalPages 
-      ? docs[0].metadata.pdf.totalPages 
-      : docs.length || 1
-    
-    return {
-      text,
-      pageCount,
-    }
-  } finally {
-    // Clean up temporary file
-    try {
-      unlinkSync(tempFilePath)
-    } catch (error) {
-      // Ignore cleanup errors
-      console.warn('Failed to delete temporary PDF file:', tempFilePath)
-    }
+  return {
+    text: data.text,
+    pageCount: data.numpages || 1,
   }
 }
 

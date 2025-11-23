@@ -116,19 +116,26 @@ export default async function VideoPage({
                   <CardContent className="p-6">
                     <div className="space-y-3">
                       <div>
-                        <p className="text-sm font-medium text-gray-700 mb-1">
-                          ⚠️ YouTube Transcription Unavailable
+                        <p className="text-sm font-medium text-red-700 mb-1">
+                          ⚠️ YouTube Transcription Failed
                         </p>
                         <p className="text-xs text-gray-600 mb-2">
-                          YouTube downloads are unreliable due to frequent API changes. The download library cannot extract the video due to YouTube's encryption updates.
+                          This video could not be transcribed. Common reasons:
                         </p>
-                        <div className="bg-yellow-50 border border-yellow-200 rounded p-3">
-                          <p className="text-xs font-medium text-yellow-800 mb-1">
-                            💡 Recommended Solution
+                        <ul className="text-xs text-gray-600 list-disc list-inside mb-3 space-y-1">
+                          <li>Video does not have captions/subtitles enabled</li>
+                          <li>YouTube is blocking downloads (403 Forbidden)</li>
+                          <li>Video is private, age-restricted, or region-locked</li>
+                        </ul>
+                        <div className="bg-blue-50 border border-blue-200 rounded p-3">
+                          <p className="text-xs font-medium text-blue-800 mb-1">
+                            💡 Recommended Solutions
                           </p>
-                          <p className="text-xs text-yellow-700">
-                            Download the video from YouTube and upload the file directly. This will enable reliable transcription and flashcard generation.
-                          </p>
+                          <ul className="text-xs text-blue-700 space-y-1 list-disc list-inside">
+                            <li>Try a different video with captions/subtitles enabled</li>
+                            <li>Download the video from YouTube and upload the file directly</li>
+                            <li>Use YouTube's "CC" button to check if captions are available</li>
+                          </ul>
                         </div>
                       </div>
                       <form action={async () => {
@@ -145,7 +152,7 @@ export default async function VideoPage({
                           type="submit"
                           className="w-full rounded-md bg-gray-600 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 mt-3"
                         >
-                          Retry (May Still Fail)
+                          Retry Transcription
                         </button>
                       </form>
                     </div>

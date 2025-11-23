@@ -84,17 +84,15 @@ export default async function LibraryPage() {
       </div>
 
       <Tabs defaultValue="videos" className="w-full">
-        <TabsList className="mb-4 sm:mb-6 w-full sm:w-auto grid grid-cols-2 sm:grid-cols-none">
-          <TabsTrigger value="videos" className="gap-1 sm:gap-2 text-xs sm:text-sm">
+        <TabsList className="mb-4 sm:mb-6 flex flex-nowrap justify-start w-auto overflow-x-auto scrollbar-hide h-auto p-1.5 bg-muted/50">
+          <TabsTrigger value="videos" className="flex-shrink-0 min-w-fit whitespace-nowrap gap-1 sm:gap-2 text-xs sm:text-sm">
             <Video className="h-3 w-3 sm:h-4 sm:w-4" />
-            <span className="hidden sm:inline">Videos</span>
-            <span className="sm:hidden">Videos</span>
+            <span>Videos</span>
             <span className="ml-1">({videos.length})</span>
           </TabsTrigger>
-          <TabsTrigger value="documents" className="gap-1 sm:gap-2 text-xs sm:text-sm">
+          <TabsTrigger value="documents" className="flex-shrink-0 min-w-fit whitespace-nowrap gap-1 sm:gap-2 text-xs sm:text-sm">
             <FileText className="h-3 w-3 sm:h-4 sm:w-4" />
-            <span className="hidden sm:inline">Documents</span>
-            <span className="sm:hidden">Docs</span>
+            <span>Documents</span>
             <span className="ml-1">({documents.length})</span>
           </TabsTrigger>
         </TabsList>

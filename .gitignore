@@ -39,3 +39,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# YouTube player scripts (created by ytdl-core)
+*-player-script.js

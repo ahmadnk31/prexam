@@ -26,6 +26,21 @@ export async function POST(req: NextRequest) {
       )
     }
 
+    // Validate YouTube URL format if provided
+    if (youtubeUrl) {
+      const trimmedUrl = youtubeUrl.trim()
+      const youtubePattern = /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/|m\.youtube\.com\/watch\?v=)([^&\n?#]+)/
+      if (!youtubePattern.test(trimmedUrl)) {
+        return NextResponse.json(
+          { 
+            error: 'Invalid YouTube URL format',
+            message: 'Please provide a valid YouTube URL. Supported formats:\n- https://www.youtube.com/watch?v=VIDEO_ID\n- https://youtu.be/VIDEO_ID\n- https://www.youtube.com/embed/VIDEO_ID'
+          },
+          { status: 400 }
+        )
+      }
+    }
+
     const serviceClient = createServiceClient()
 
     // Create video record

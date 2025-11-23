@@ -48,8 +48,24 @@ export default function UploadPage() {
     }
   }
 
+  const validateYouTubeUrl = (url: string): boolean => {
+    const patterns = [
+      /^https?:\/\/(www\.)?(youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/|youtube\.com\/v\/)([^&\n?#]+)/,
+      /^https?:\/\/(www\.)?(m\.)?youtube\.com\/watch\?v=([^&\n?#]+)/,
+    ]
+    return patterns.some(pattern => pattern.test(url))
+  }
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+
+    // Validate YouTube URL if that's the method
+    if (uploadMethod === 'youtube' && youtubeUrl) {
+      if (!validateYouTubeUrl(youtubeUrl)) {
+        alert('Please enter a valid YouTube URL. Supported formats:\n- https://www.youtube.com/watch?v=VIDEO_ID\n- https://youtu.be/VIDEO_ID\n- https://www.youtube.com/embed/VIDEO_ID')
+        return
+      }
+    }
 
     setUploading(true)
     setProgress(0)
@@ -60,7 +76,7 @@ export default function UploadPage() {
       if (uploadMethod === 'file' && file) {
         formData.append('file', file)
       } else if (uploadMethod === 'youtube' && youtubeUrl) {
-        formData.append('youtubeUrl', youtubeUrl)
+        formData.append('youtubeUrl', youtubeUrl.trim())
       }
       if (title) {
         formData.append('title', title)
@@ -73,13 +89,13 @@ export default function UploadPage() {
 
       if (!response.ok) {
         const error = await response.json()
-        throw new Error(error.error || 'Upload failed')
+        throw new Error(error.error || error.message || 'Upload failed')
       }
 
       const { videoId } = await response.json()
       router.push(`/dashboard/videos/${videoId}`)
     } catch (error: any) {
-      alert(error.message || 'Upload failed')
+      alert(error.message || 'Upload failed. Please try again.')
       setUploading(false)
     }
   }
@@ -234,6 +250,12 @@ export default function UploadPage() {
                 <p className="text-xs text-gray-500">
                   Paste any YouTube video URL to get started
                 </p>
+                <div className="mt-2 p-2 bg-blue-50 border border-blue-200 rounded text-xs">
+                  <p className="text-blue-800 font-medium mb-1">💡 Important:</p>
+                  <p className="text-blue-700">
+                    For best results, use videos with captions/subtitles enabled. Videos without captions may not work due to YouTube's restrictions.
+                  </p>
+                </div>
               </div>
             )}
 
