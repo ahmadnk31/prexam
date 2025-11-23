@@ -50,14 +50,16 @@ export async function POST(req: NextRequest) {
             .select('user_id')
             .eq('id', videoId)
             .single()
-          document = retryResult.data
+          // Type assertion: retry result doesn't have language, but we'll handle it
+          document = retryResult.data as { user_id: string; language?: string } | null
           documentError = retryResult.error
         }
 
         if (!documentError && document) {
           // Verify ownership for documents
           if (document.user_id === user.id) {
-            documentLanguage = document.language || null
+            // Language might not exist if we retried without it
+            documentLanguage = (document as any).language || null
           } else {
             // User doesn't own this document
             console.error('Unauthorized: User does not own document', { 
