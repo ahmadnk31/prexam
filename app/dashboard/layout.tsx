@@ -1,6 +1,7 @@
 import { createClient } from '@/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import { Analytics } from "@vercel/analytics/next"
 import { Button } from '@/components/ui/button'
 import { 
   Brain, 
@@ -145,6 +146,7 @@ export default async function DashboardLayout({
         </div>
       </nav>
       <main className="min-h-[calc(100vh-73px)]">{children}</main>
+      <Analytics />
     </div>
   )
 }

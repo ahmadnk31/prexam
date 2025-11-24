@@ -24,6 +24,7 @@
     "@radix-ui/react-tabs": "^1.1.13",
     "@supabase/ssr": "^0.7.0",
     "@supabase/supabase-js": "^2.84.0",
+    "@vercel/analytics": "^1.5.0",
     "@vidstack/react": "^1.12.13",
     "ai": "^5.0.100",
     "apify-client": "^2.20.0",
