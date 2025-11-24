@@ -206,7 +206,7 @@ export default async function Home() {
             <div className="border-b border-purple-300/30 bg-[#4B3F72]/50 backdrop-blur-sm px-6 py-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <SummaryrLogo size={48} />
+                  <SummaryrLogo size={68} />
                   
                 </div>
                 <div className="flex items-center gap-2">
