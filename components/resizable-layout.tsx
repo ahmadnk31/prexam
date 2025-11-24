@@ -20,6 +20,18 @@ export default function ResizableLayout({
 }: ResizableLayoutProps) {
   return (
     <>
+      {/* Mobile: Vertical stacked layout */}
+      <div className="block md:hidden space-y-6">
+        <div className="w-full">{leftPanel}</div>
+        <div className="w-full">{rightPanel}</div>
+      </div>
+
+      {/* Tablet: Horizontal layout without resizer (fixed split) */}
+      <div className="hidden md:grid lg:hidden grid-cols-2 gap-4 h-full">
+        <div className="h-full overflow-y-auto pr-2">{leftPanel}</div>
+        <div className="h-full overflow-y-auto pl-2">{rightPanel}</div>
+      </div>
+
       {/* Desktop: Horizontal layout with resizer */}
       <div className="hidden lg:block h-full">
         <PanelGroup direction="horizontal" className="h-full">
@@ -35,20 +47,6 @@ export default function ResizableLayout({
             <div className="h-full pl-4 overflow-y-auto">{rightPanel}</div>
           </Panel>
         </PanelGroup>
-      </div>
-
-      {/* Tablet: Horizontal layout without resizer (fixed split) */}
-      <div className="hidden md:block lg:hidden h-full">
-        <div className="grid grid-cols-2 gap-4 h-full">
-          <div className="h-full overflow-y-auto pr-2">{leftPanel}</div>
-          <div className="h-full overflow-y-auto pl-2">{rightPanel}</div>
-        </div>
-      </div>
-
-      {/* Mobile: Vertical stacked layout */}
-      <div className="block md:hidden space-y-6">
-        <div className="w-full">{leftPanel}</div>
-        <div className="w-full">{rightPanel}</div>
       </div>
     </>
   )

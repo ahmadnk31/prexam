@@ -37,12 +37,19 @@ export async function POST(req: NextRequest) {
       try {
         // First check if it's a document (documents are more common for text selection)
         // Try to select language, but handle gracefully if column doesn't exist
-        let { data: document, error: documentError } = await supabase
+        type DocumentType = { user_id: string; language?: string } | null
+        let document: DocumentType = null
+        let documentError: any = null
+
+        const initialResult = await supabase
           .from('documents')
           .select('user_id, language')
           .eq('id', videoId)
           .single()
-        
+
+        document = initialResult.data as DocumentType
+        documentError = initialResult.error
+
         // If error is due to missing language column, retry without it
         if (documentError && documentError.code === '42703' && documentError.message?.includes('language')) {
           const retryResult = await supabase
@@ -50,8 +57,8 @@ export async function POST(req: NextRequest) {
             .select('user_id')
             .eq('id', videoId)
             .single()
-          // Type assertion: retry result doesn't have language, but we'll handle it
-          document = retryResult.data as { user_id: string; language?: string } | null
+          // Retry result doesn't have language
+          document = retryResult.data as DocumentType
           documentError = retryResult.error
         }
 
@@ -101,8 +108,8 @@ export async function POST(req: NextRequest) {
                 videoUserId: video.user_id, 
                 videoId 
               })
-              return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-            }
+          return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+        }
             // It's a video, ownership verified (no language from video)
           } else if (videoError && videoError.code !== 'PGRST116') {
             // PGRST116 is "not found" which is fine, but other errors should be logged

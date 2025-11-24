@@ -111,7 +111,7 @@ export default async function Home() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
-      <div className="flex min-h-screen flex-col bg-gradient-to-br from-pink-200 via-purple-200 to-yellow-200">
+    <div className="flex min-h-screen flex-col bg-gradient-to-br from-pink-200 via-purple-200 to-yellow-200">
       {/* Navigation */}
       <nav className="sticky top-4 z-50 px-4 sm:px-6 pt-4">
         <div className="mx-auto max-w-7xl">

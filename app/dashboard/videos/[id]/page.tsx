@@ -133,8 +133,8 @@ export default async function VideoPage({
       <VideoPageClient
         initialVideo={video}
         initialSegments={segments}
-        videoId={id}
-      />
+              videoId={id}
+            />
     </div>
   )
 }

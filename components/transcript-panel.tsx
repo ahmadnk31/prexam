@@ -62,7 +62,7 @@ export default function TranscriptPanel({
       
       // If not between segments and we had an active segment, clear it
       if (!isBetweenSegments && activeSegmentIndex !== null) {
-        setActiveSegmentIndex(null)
+      setActiveSegmentIndex(null)
       }
     }
   }, [currentTime, segments, activeSegmentIndex])
@@ -236,12 +236,12 @@ export default function TranscriptPanel({
   }
 
   return (
-    <Card className="h-full flex flex-col">
+    <Card className="h-full flex flex-col max-h-[50vh] sm:max-h-[60vh] md:max-h-none">
       <CardHeader className="flex-shrink-0">
         <CardTitle>Transcript</CardTitle>
       </CardHeader>
-      <CardContent className="flex-1 min-h-0 flex flex-col">
-        <ScrollArea className="flex-1" ref={scrollAreaRef}>
+      <CardContent className="flex-1 min-h-0 flex flex-col overflow-hidden">
+        <ScrollArea className="flex-1 min-h-0 h-full overflow-y-auto" ref={scrollAreaRef}>
           <div className="space-y-4 pr-4">
             {segments.map((segment, index) => {
               const isActive = activeSegmentIndex === index

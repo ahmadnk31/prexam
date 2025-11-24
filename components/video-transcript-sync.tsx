@@ -45,7 +45,7 @@ export default function VideoTranscriptSync({
   }, [])
 
   return (
-    <div className="flex h-full flex-col space-y-6 lg:space-y-6">
+    <div className="flex h-full flex-col space-y-4 sm:space-y-6 lg:space-y-6">
       <div className="flex-shrink-0 w-full">
         <VideoPlayer
           ref={videoPlayerRef}
@@ -54,7 +54,7 @@ export default function VideoTranscriptSync({
         />
       </div>
       {video.status === 'ready' && segments.length > 0 && (
-        <div className="flex-1 min-h-0 w-full lg:flex-1">
+        <div className="flex-1 min-h-0 w-full lg:flex-1 max-h-[50vh] sm:max-h-[60vh] md:max-h-none">
           <TranscriptPanel
             videoId={videoId}
             segments={segments}

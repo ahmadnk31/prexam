@@ -11,6 +11,18 @@ declare global {
     onYouTubeIframeAPIReady: () => void
   }
 }
+import { 
+  isYouTubeProvider, 
+  MediaPlayer, 
+  MediaProvider, 
+  MediaProviderAdapter, 
+  useMediaPlayer, 
+  useMediaProvider, 
+  useMediaStore,
+  PlayButton
+} from '@vidstack/react'
+import '@vidstack/react/player/styles/default/theme.css';
+import '@vidstack/react/player/styles/default/layouts/video.css';
 
 interface VideoPlayerProps {
   video: {
@@ -28,15 +40,210 @@ export interface VideoPlayerRef {
   getCurrentTime: () => number
 }
 
+// Inner component that uses Vidstack hooks (must be inside MediaPlayer)
+function YouTubePlayerControls({ 
+  onTimeUpdate,
+  onPlayerReady
+}: { 
+  onTimeUpdate?: (currentTime: number) => void
+  onPlayerReady?: (player: any) => void
+}) {
+  const provider = useMediaProvider()
+  const mediaPlayer = useMediaPlayer()
+  const { currentTime } = useMediaStore()
+  
+  // Configure YouTube provider and notify parent
+  useEffect(() => {
+    if (provider && 'type' in provider && provider.type === 'youtube') {
+      // Configure YouTube provider
+      if ('cookies' in provider) {
+        (provider as any).cookies = true
+      }
+    }
+    
+    if (mediaPlayer && onPlayerReady) {
+      onPlayerReady(mediaPlayer)
+    }
+  }, [provider, mediaPlayer, onPlayerReady])
+  
+  // Set up time update polling when media player is ready
+  useEffect(() => {
+    if (!onTimeUpdate) return
+
+    // Set up time update polling
+    const interval = setInterval(() => {
+      if (currentTime > 0) {
+        onTimeUpdate(currentTime)
+      }
+    }, 100)
+
+    return () => {
+      clearInterval(interval)
+    }
+  }, [currentTime, onTimeUpdate])
+
+  return null // This component doesn't render anything
+}
+
+// YouTube Player Component - using standard iframe for reliability
+function YouTubePlayer({ 
+  youtubeUrl, 
+  onTimeUpdate,
+  onPlayerReady
+}: { 
+  youtubeUrl: string
+  onTimeUpdate?: (currentTime: number) => void
+  onPlayerReady?: (player: any) => void
+}) {
+  const youtubeId = youtubeUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/)?.[1] || 
+                    youtubeUrl.match(/^([a-zA-Z0-9_-]{11})$/)?.[1]
+  
+  const iframeRef = useRef<HTMLIFrameElement>(null)
+  const timeUpdateIntervalRef = useRef<NodeJS.Timeout | null>(null)
+
+  useEffect(() => {
+    if (!youtubeId) return
+
+    // Only initialize API if we need time updates or player ready callback
+    if (!onTimeUpdate && !onPlayerReady) return
+
+    // Wait for iframe to be in the DOM
+    if (!iframeRef.current) {
+      // Retry after a short delay
+      const timeout = setTimeout(() => {
+        // This will trigger the effect again if iframe is still not ready
+      }, 100)
+      return () => clearTimeout(timeout)
+    }
+
+    // Load YouTube IFrame API
+    if (!window.YT) {
+      const existingScript = document.querySelector('script[src="https://www.youtube.com/iframe_api"]')
+      if (!existingScript) {
+        const tag = document.createElement('script')
+        tag.src = 'https://www.youtube.com/iframe_api'
+        tag.async = true
+        const firstScriptTag = document.getElementsByTagName('script')[0]
+        if (firstScriptTag?.parentNode) {
+          firstScriptTag.parentNode.insertBefore(tag, firstScriptTag)
+        }
+      }
+    }
+
+    let player: any = null
+    let isInitialized = false
+    const playerId = `youtube-player-${youtubeId}-${Date.now()}`
+
+    // Give iframe a unique ID for the API
+    if (iframeRef.current && !iframeRef.current.id) {
+      iframeRef.current.id = playerId
+    }
+
+    const initializePlayer = () => {
+      // Prevent multiple initializations
+      if (isInitialized || !iframeRef.current) return
+      
+      if (window.YT && window.YT.Player) {
+        try {
+          // Check if player already exists
+          if (iframeRef.current.dataset.playerInitialized === 'true') {
+            return
+          }
+
+          isInitialized = true
+          iframeRef.current.dataset.playerInitialized = 'true'
+          
+          // Attach API to existing iframe - don't recreate it
+          player = new window.YT.Player(iframeRef.current.id || playerId, {
+            events: {
+              onReady: () => {
+                if (onPlayerReady) {
+                  onPlayerReady(player)
+                }
+                // Start time update polling only if needed
+                if (onTimeUpdate) {
+                  timeUpdateIntervalRef.current = setInterval(() => {
+                    try {
+                      if (player && typeof player.getCurrentTime === 'function') {
+                        const currentTime = player.getCurrentTime()
+                        if (currentTime > 0) {
+                          onTimeUpdate(currentTime)
+                        }
+                      }
+                    } catch (e) {
+                      // Player might not be ready or was destroyed
+                    }
+                  }, 100)
+                }
+              },
+              onError: (event: any) => {
+                console.error('YouTube player error:', event.data)
+              }
+            }
+          })
+        } catch (e) {
+          console.error('Error initializing YouTube player:', e)
+          isInitialized = false
+          if (iframeRef.current) {
+            iframeRef.current.dataset.playerInitialized = 'false'
+          }
+        }
+      } else {
+        setTimeout(initializePlayer, 100)
+      }
+    }
+
+    // Wait for API to load
+    if (window.YT && window.YT.Player) {
+      // API already loaded - wait a bit for iframe to be ready
+      setTimeout(initializePlayer, 500)
+    } else {
+      // Wait for API to load
+      const originalCallback = window.onYouTubeIframeAPIReady
+      window.onYouTubeIframeAPIReady = () => {
+        if (originalCallback) originalCallback()
+        setTimeout(initializePlayer, 1000) // Give iframe more time to load
+      }
+    }
+
+    return () => {
+      if (timeUpdateIntervalRef.current) {
+        clearInterval(timeUpdateIntervalRef.current)
+        timeUpdateIntervalRef.current = null
+      }
+      // CRITICAL: Don't destroy the player - it causes the black screen
+      // The iframe will handle cleanup naturally
+      isInitialized = false
+    }
+  }, [youtubeId, onTimeUpdate, onPlayerReady])
+
+  if (!youtubeId) return null
+
+  const playerId = `youtube-player-${youtubeId}`
+  const embedUrl = `https://www.youtube.com/embed/${youtubeId}?enablejsapi=1&playsinline=1&controls=1&rel=0&origin=${typeof window !== 'undefined' ? window.location.origin : ''}`
+
+  return (
+    <div className="w-full aspect-video relative bg-black rounded-lg overflow-hidden">
+      <iframe
+        id={playerId}
+        ref={iframeRef}
+        src={embedUrl}
+        className="absolute inset-0 w-full h-full"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowFullScreen
+        title="YouTube video player"
+        frameBorder="0"
+      />
+    </div>
+  )
+}
+
 const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
   ({ video, onTimeUpdate }, ref) => {
     const videoRef = useRef<HTMLVideoElement>(null)
     const plyrRef = useRef<any>(null)
-    const youtubePlayerRef = useRef<any>(null)
-    const youtubeIdRef = useRef<string | null>(null)
+    const mediaPlayerRef = useRef<any>(null)
     const timeUpdateIntervalRef = useRef<NodeJS.Timeout | null>(null)
-    const [youtubePlayerReady, setYoutubePlayerReady] = useState(false)
-    const [youtubeError, setYoutubeError] = useState<string | null>(null)
     // Extract YouTube video ID from various URL formats
     function extractYouTubeId(url: string | null | undefined): string | null {
       if (!url) return null
@@ -62,22 +269,27 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       return null
     }
 
+    // Handle YouTube player ready callback
+    const handleYouTubePlayerReady = (player: any) => {
+      mediaPlayerRef.current = player
+    }
+
     // Expose methods via ref
     useImperativeHandle(ref, () => ({
       seekTo: (time: number) => {
-        if (plyrRef.current) {
+        if (mediaPlayerRef.current) {
+          mediaPlayerRef.current.currentTime = time
+        } else if (plyrRef.current) {
           plyrRef.current.currentTime = time
-        } else if (youtubePlayerRef.current) {
-          youtubePlayerRef.current.seekTo(time, true)
         } else if (videoRef.current) {
           videoRef.current.currentTime = time
         }
       },
       getCurrentTime: () => {
-        if (plyrRef.current) {
+        if (mediaPlayerRef.current) {
+          return mediaPlayerRef.current.currentTime || 0
+        } else if (plyrRef.current) {
           return plyrRef.current.currentTime || 0
-        } else if (youtubePlayerRef.current) {
-          return youtubePlayerRef.current.getCurrentTime() || 0
         } else if (videoRef.current) {
           return videoRef.current.currentTime
         }
@@ -85,203 +297,6 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       },
     }))
 
-    // Handle YouTube IFrame API
-    useEffect(() => {
-      if (!video.youtube_url) return
-
-      const youtubeId = extractYouTubeId(video.youtube_url)
-      if (!youtubeId) {
-        console.error('Could not extract YouTube ID from URL:', video.youtube_url)
-        setYoutubeError('Invalid YouTube URL format')
-        return
-      }
-
-      console.log('Setting up YouTube player for ID:', youtubeId)
-      youtubeIdRef.current = youtubeId
-      let playerInitialized = false
-      let retryCount = 0
-      const maxRetries = 30 // 3 seconds max wait
-
-      const initializePlayer = () => {
-        if (playerInitialized || !youtubeIdRef.current) return
-
-        const playerId = `youtube-player-${youtubeIdRef.current}`
-        const container = document.getElementById(playerId)
-        
-        if (!container) {
-          retryCount++
-          if (retryCount < maxRetries) {
-            // Wait a bit for the DOM to be ready
-            setTimeout(initializePlayer, 100)
-            return
-          } else {
-            const errorMsg = `YouTube player container not found after ${maxRetries} retries: ${playerId}`
-            console.error(errorMsg)
-            setYoutubeError(errorMsg)
-            return
-          }
-        }
-        
-        // Ensure container has proper dimensions
-        if (container) {
-          const rect = container.getBoundingClientRect()
-          console.log('Container dimensions:', { width: rect.width, height: rect.height })
-          if (rect.width === 0 || rect.height === 0) {
-            console.warn('Container has zero dimensions, this may cause player issues')
-          }
-        }
-
-        // Check if API is ready
-        if (!window.YT || !window.YT.Player) {
-          console.warn('YouTube API not ready yet, retrying...')
-          setTimeout(initializePlayer, 100)
-          return
-        }
-
-        playerInitialized = true
-        console.log('Initializing YouTube player for:', youtubeIdRef.current)
-
-        try {
-          youtubePlayerRef.current = new window.YT.Player(playerId, {
-            videoId: youtubeIdRef.current,
-            width: '100%',
-            height: '100%',
-            playerVars: {
-              enablejsapi: 1,
-              origin: window.location.origin,
-              playsinline: 1,
-              autoplay: 0,
-              controls: 1,
-              rel: 0,
-              modestbranding: 1,
-            },
-            events: {
-              onReady: (event: any) => {
-                console.log('YouTube player ready, starting time update polling')
-                setYoutubePlayerReady(true)
-                setYoutubeError(null)
-                // Start polling for time updates when ready
-                if (onTimeUpdate) {
-                  // Clear any existing interval
-                  if (timeUpdateIntervalRef.current) {
-                    clearInterval(timeUpdateIntervalRef.current)
-                  }
-                  timeUpdateIntervalRef.current = setInterval(() => {
-                    if (youtubePlayerRef.current) {
-                      try {
-                        const currentTime = youtubePlayerRef.current.getCurrentTime()
-                        if (currentTime !== undefined && currentTime !== null && !isNaN(currentTime) && currentTime > 0) {
-                          onTimeUpdate(currentTime)
-                        }
-                      } catch (e) {
-                        // Player might not be ready yet or video paused
-                      }
-                    }
-                  }, 100) // Update every 100ms for smoother sync
-                }
-              },
-              onError: (event: any) => {
-                console.error('YouTube player error:', event.data)
-                setYoutubeError(`Error ${event.data}`)
-                // Error codes: 2=invalid ID, 5=HTML5 error, 100=video not found, 101/150=not allowed
-                if (event.data === 100 || event.data === 101 || event.data === 150) {
-                  const errorMsg = 'Video is not available (private, restricted, or removed)'
-                  console.error(errorMsg)
-                  setYoutubeError(errorMsg)
-                }
-              },
-              onStateChange: (event: any) => {
-                // States: -1=unstarted, 0=ended, 1=playing, 2=paused, 3=buffering, 5=cued
-                if (event.data === window.YT.PlayerState.PLAYING) {
-                  console.log('YouTube video started playing')
-                }
-              },
-            },
-          })
-        } catch (error) {
-          console.error('Error creating YouTube player:', error)
-          playerInitialized = false
-        }
-      }
-
-      // Load YouTube IFrame API
-      if (!window.YT) {
-        console.log('Loading YouTube IFrame API...')
-        const tag = document.createElement('script')
-        tag.src = 'https://www.youtube.com/iframe_api'
-        tag.async = true
-        tag.defer = true
-        
-        // Handle script load errors
-        tag.onerror = () => {
-          console.error('Failed to load YouTube IFrame API - check network or ad blockers')
-        }
-        
-        const firstScriptTag = document.getElementsByTagName('script')[0]
-        if (firstScriptTag && firstScriptTag.parentNode) {
-          firstScriptTag.parentNode.insertBefore(tag, firstScriptTag)
-        } else {
-          document.head.appendChild(tag)
-        }
-
-        // Store the original callback if it exists
-        const originalCallback = window.onYouTubeIframeAPIReady
-
-        window.onYouTubeIframeAPIReady = () => {
-          console.log('YouTube IFrame API ready')
-          if (originalCallback) {
-            originalCallback()
-          }
-          // Wait a bit for DOM to be ready
-          setTimeout(() => {
-            initializePlayer()
-          }, 300)
-        }
-      } else if (window.YT && window.YT.Player) {
-        // API already loaded
-        console.log('YouTube API already loaded, initializing player...')
-        setTimeout(() => {
-          initializePlayer()
-        }, 200)
-      } else {
-        // API is loading but not ready yet
-        console.log('YouTube API loading, waiting...')
-        const checkInterval = setInterval(() => {
-          if (window.YT && window.YT.Player) {
-            clearInterval(checkInterval)
-            console.log('YouTube API became ready, initializing player...')
-            setTimeout(() => {
-              initializePlayer()
-            }, 200)
-          }
-        }, 100)
-        
-        // Timeout after 5 seconds
-        setTimeout(() => {
-          clearInterval(checkInterval)
-          if (!playerInitialized) {
-            console.error('YouTube API failed to load within 5 seconds')
-          }
-        }, 5000)
-      }
-
-      return () => {
-        if (timeUpdateIntervalRef.current) {
-          clearInterval(timeUpdateIntervalRef.current)
-          timeUpdateIntervalRef.current = null
-        }
-        if (youtubePlayerRef.current) {
-          try {
-            youtubePlayerRef.current.destroy()
-          } catch (e) {
-            // Ignore destroy errors
-          }
-          youtubePlayerRef.current = null
-        }
-        playerInitialized = false
-        retryCount = 0
-      }
-    }, [video.youtube_url, onTimeUpdate])
 
     // Initialize Plyr for HTML5 videos
     useEffect(() => {
@@ -348,30 +363,24 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       }
     }, [video.video_url, video.youtube_url, video.status, onTimeUpdate])
 
-    // For YouTube videos, use iframe embed with YouTube IFrame API for time tracking
+    // For YouTube videos, use Vidstack MediaPlayer
     if (video.youtube_url) {
       const youtubeId = extractYouTubeId(video.youtube_url)
       
       if (youtubeId) {
+        // Construct YouTube URL
+        const youtubeUrl = video.youtube_url.startsWith('http') 
+          ? video.youtube_url 
+          : `https://www.youtube.com/watch?v=${youtubeId}`
+        
         return (
-          <Card>
-            <CardContent className="p-0">
-              <div className="aspect-video w-full rounded-lg overflow-hidden bg-black relative">
-                {!youtubePlayerReady && !youtubeError && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
-                    <div className="text-white text-sm">Loading YouTube player...</div>
-                  </div>
-                )}
-                {youtubeError && (
-                  <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
-                    <div className="text-red-400 text-sm text-center px-4">
-                      {youtubeError}
-                    </div>
-                  </div>
-                )}
-                <div 
-                  id={`youtube-player-${youtubeId}`} 
-                  className="w-full h-full"
+          <Card className="w-full">
+            <CardContent className="p-0 w-full">
+              <div className="w-full rounded-lg overflow-hidden bg-black">
+                <YouTubePlayer 
+                  youtubeUrl={youtubeUrl}
+                  onTimeUpdate={onTimeUpdate}
+                  onPlayerReady={handleYouTubePlayerReady}
                 />
               </div>
             </CardContent>
