@@ -11,6 +11,7 @@ import Link from 'next/link'
 import DocumentNotesPanel from '@/components/document-notes-panel'
 import DocumentSummaryPanel from '@/components/document-summary-panel'
 import { createClient } from '@/supabase/client'
+import { useToast } from '@/components/ui/use-toast'
 
 interface Flashcard {
   id: string
@@ -32,6 +33,7 @@ interface DocumentAIToolsPanelProps {
 }
 
 export default function DocumentAIToolsPanel({ documentId }: DocumentAIToolsPanelProps) {
+  const { toast } = useToast()
   const [generatingFlashcards, setGeneratingFlashcards] = useState(false)
   const [generatingQuestions, setGeneratingQuestions] = useState(false)
   const [generatingSummary, setGeneratingSummary] = useState(false)
@@ -128,8 +130,19 @@ export default function DocumentAIToolsPanel({ documentId }: DocumentAIToolsPane
 
       const data = await response.json()
       setSummaryContent(data.content)
+      
+      // Show success toast
+      toast({
+        variant: 'success',
+        title: 'Summary generated!',
+        description: 'Your document summary has been created successfully.',
+      })
     } catch (error) {
-      alert('Failed to generate summary')
+      toast({
+        variant: 'destructive',
+        title: 'Failed to generate summary',
+        description: 'Please try again later.',
+      })
     } finally {
       setGeneratingSummary(false)
     }

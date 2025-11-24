@@ -41,7 +41,6 @@ export default function DocumentViewer({
 
   // Handle text selection
   const handleMouseUp = useCallback((event: MouseEvent) => {
-
     const selection = window.getSelection()
     if (!selection || selection.rangeCount === 0) {
       setSelectionPosition(null)
@@ -50,22 +49,6 @@ export default function DocumentViewer({
     }
 
     const selectedText = selection.toString().trim()
-    const range = selection.getRangeAt(0)
-    const rect = range.getBoundingClientRect()
-
-    // Check if selection is within the document viewer
-    // Try mobile scroll container first, then desktop ScrollArea
-    const mobileContainer = mobileScrollRef.current
-    const desktopContainer = scrollAreaRef.current?.querySelector('[data-radix-scroll-area-viewport]')
-    const scrollContainer = mobileContainer || desktopContainer
-    const documentPanelElement = (scrollAreaRef.current || mobileScrollRef.current)?.closest('.document-viewer')
-    
-    if (!documentPanelElement || !scrollContainer || !scrollContainer.contains(range.commonAncestorContainer)) {
-      setSelectionPosition(null)
-      setSelectedText('')
-      return
-    }
-
     if (selectedText.length < 10) {
       setSelectionPosition(null)
       setSelectedText('')
@@ -78,10 +61,48 @@ export default function DocumentViewer({
       return
     }
 
+    // Check if selection is within the document viewer
+    const range = selection.getRangeAt(0)
+    const startContainer = range.startContainer
+    const endContainer = range.endContainer
+    
+    // Get the document viewer element
+    const documentPanelElement = (scrollAreaRef.current || mobileScrollRef.current)?.closest('.document-viewer')
+    
+    if (!documentPanelElement) {
+      setSelectionPosition(null)
+      setSelectedText('')
+      return
+    }
+
+    // Helper to get element from node
+    const getElement = (node: Node): Element | null => {
+      if (node.nodeType === Node.ELEMENT_NODE) {
+        return node as Element
+      }
+      return node.parentElement
+    }
+
+    // Check if start or end of selection is within document viewer
+    const startElement = getElement(startContainer)
+    const endElement = getElement(endContainer)
+    
+    const isStartInViewer = startElement && documentPanelElement.contains(startElement)
+    const isEndInViewer = endElement && documentPanelElement.contains(endElement)
+    
+    if (!isStartInViewer && !isEndInViewer) {
+      setSelectionPosition(null)
+      setSelectedText('')
+      return
+    }
+
+    // Get the bounding rect for positioning
+    const rect = range.getBoundingClientRect()
+
     setSelectedText(selectedText)
     setSelectionPosition({
       x: rect.left + rect.width / 2,
-      y: rect.bottom,
+      y: rect.bottom + 10,
     })
   }, [])
 

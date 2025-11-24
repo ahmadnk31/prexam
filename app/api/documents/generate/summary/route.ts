@@ -114,26 +114,49 @@ export async function POST(req: NextRequest) {
     }
 
     // Store or update summary
-    const { error: upsertError } = await serviceClient
+    // Check if summary already exists
+    const { data: existingSummary } = await serviceClient
       .from('summaries')
-      .upsert(
-        {
+      .select('id')
+      .eq('document_id', documentId)
+      .eq('user_id', user.id)
+      .single()
+
+    if (existingSummary) {
+      // Update existing summary
+      const { error: updateError } = await serviceClient
+        .from('summaries')
+        .update({
+          content: summaryContent,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('id', existingSummary.id)
+
+      if (updateError) {
+        console.error('Error updating summary:', updateError)
+        return NextResponse.json(
+          { error: 'Failed to update summary' },
+          { status: 500 }
+        )
+      }
+    } else {
+      // Insert new summary
+      const { error: insertError } = await serviceClient
+        .from('summaries')
+        .insert({
           document_id: documentId,
           video_id: null,
           user_id: user.id,
           content: summaryContent,
-        },
-        {
-          onConflict: 'document_id,user_id',
-        }
-      )
+        })
 
-    if (upsertError) {
-      console.error('Error storing summary:', upsertError)
-      return NextResponse.json(
-        { error: 'Failed to store summary' },
-        { status: 500 }
-      )
+      if (insertError) {
+        console.error('Error storing summary:', insertError)
+        return NextResponse.json(
+          { error: 'Failed to store summary' },
+          { status: 500 }
+        )
+      }
     }
 
     return NextResponse.json({

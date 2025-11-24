@@ -5,12 +5,14 @@ import { Textarea } from '@/components/ui/textarea'
 import { Button } from '@/components/ui/button'
 import { Save, Loader2 } from 'lucide-react'
 import { createClient } from '@/supabase/client'
+import { useToast } from '@/components/ui/use-toast'
 
 interface DocumentNotesPanelProps {
   documentId: string
 }
 
 export default function DocumentNotesPanel({ documentId }: DocumentNotesPanelProps) {
+  const { toast } = useToast()
   const [notes, setNotes] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
@@ -48,7 +50,11 @@ export default function DocumentNotesPanel({ documentId }: DocumentNotesPanelPro
       } = await supabase.auth.getUser()
 
       if (!user) {
-        alert('You must be logged in to save notes')
+        toast({
+          variant: 'destructive',
+          title: 'Authentication required',
+          description: 'You must be logged in to save notes',
+        })
         return
       }
 
@@ -69,10 +75,18 @@ export default function DocumentNotesPanel({ documentId }: DocumentNotesPanelPro
         throw error
       }
 
-      alert('Notes saved successfully!')
+      toast({
+        variant: 'success',
+        title: 'Notes saved!',
+        description: 'Your notes have been saved successfully.',
+      })
     } catch (error: any) {
       console.error('Error saving notes:', error)
-      alert('Failed to save notes: ' + (error.message || 'Unknown error'))
+      toast({
+        variant: 'destructive',
+        title: 'Failed to save notes',
+        description: error.message || 'Unknown error occurred',
+      })
     } finally {
       setSaving(false)
     }
