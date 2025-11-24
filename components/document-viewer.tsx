@@ -39,79 +39,90 @@ export default function DocumentViewer({
   const [selectionPosition, setSelectionPosition] = useState<{ x: number; y: number } | null>(null)
   const [showScrollTop, setShowScrollTop] = useState(false)
 
-  // Handle text selection
-  const handleMouseUp = useCallback((event: MouseEvent) => {
-    const selection = window.getSelection()
-    if (!selection || selection.rangeCount === 0) {
-      setSelectionPosition(null)
-      setSelectedText('')
-      return
-    }
-
-    const selectedText = selection.toString().trim()
-    if (selectedText.length < 10) {
-      setSelectionPosition(null)
-      setSelectedText('')
-      return
-    }
-
-    // Check if the mouseup event target is part of the toolbar
-    const target = event.target as HTMLElement
-    if (target.closest('[data-selection-toolbar]')) {
-      return
-    }
-
-    // Check if selection is within the document viewer
-    const range = selection.getRangeAt(0)
-    const startContainer = range.startContainer
-    const endContainer = range.endContainer
-    
-    // Get the document viewer element
-    const documentPanelElement = (scrollAreaRef.current || mobileScrollRef.current)?.closest('.document-viewer')
-    
-    if (!documentPanelElement) {
-      setSelectionPosition(null)
-      setSelectedText('')
-      return
-    }
-
-    // Helper to get element from node
-    const getElement = (node: Node): Element | null => {
-      if (node.nodeType === Node.ELEMENT_NODE) {
-        return node as Element
+  // Handle text selection (works for both mouse and touch events)
+  const handleSelection = useCallback((event: MouseEvent | TouchEvent) => {
+    // Small delay to ensure selection is complete on mobile
+    setTimeout(() => {
+      const selection = window.getSelection()
+      if (!selection || selection.rangeCount === 0) {
+        setSelectionPosition(null)
+        setSelectedText('')
+        return
       }
-      return node.parentElement
-    }
 
-    // Check if start or end of selection is within document viewer
-    const startElement = getElement(startContainer)
-    const endElement = getElement(endContainer)
-    
-    const isStartInViewer = startElement && documentPanelElement.contains(startElement)
-    const isEndInViewer = endElement && documentPanelElement.contains(endElement)
-    
-    if (!isStartInViewer && !isEndInViewer) {
-      setSelectionPosition(null)
-      setSelectedText('')
-      return
-    }
+      const selectedText = selection.toString().trim()
+      if (selectedText.length < 10) {
+        setSelectionPosition(null)
+        setSelectedText('')
+        return
+      }
 
-    // Get the bounding rect for positioning
-    const rect = range.getBoundingClientRect()
+      // Check if the event target is part of the toolbar
+      const target = (event.target || (event as TouchEvent).touches?.[0]?.target) as HTMLElement
+      if (target?.closest('[data-selection-toolbar]')) {
+        return
+      }
 
-    setSelectedText(selectedText)
-    setSelectionPosition({
-      x: rect.left + rect.width / 2,
-      y: rect.bottom + 10,
-    })
+      // Check if selection is within the document viewer
+      const range = selection.getRangeAt(0)
+      const startContainer = range.startContainer
+      const endContainer = range.endContainer
+      
+      // Get the document viewer element
+      const documentPanelElement = (scrollAreaRef.current || mobileScrollRef.current)?.closest('.document-viewer')
+      
+      if (!documentPanelElement) {
+        setSelectionPosition(null)
+        setSelectedText('')
+        return
+      }
+
+      // Helper to get element from node
+      const getElement = (node: Node): Element | null => {
+        if (node.nodeType === Node.ELEMENT_NODE) {
+          return node as Element
+        }
+        return node.parentElement
+      }
+
+      // Check if start or end of selection is within document viewer
+      const startElement = getElement(startContainer)
+      const endElement = getElement(endContainer)
+      
+      const isStartInViewer = startElement && documentPanelElement.contains(startElement)
+      const isEndInViewer = endElement && documentPanelElement.contains(endElement)
+      
+      if (!isStartInViewer && !isEndInViewer) {
+        setSelectionPosition(null)
+        setSelectedText('')
+        return
+      }
+
+      // Get the bounding rect for positioning
+      const rect = range.getBoundingClientRect()
+
+      setSelectedText(selectedText)
+      // On mobile, position toolbar above selection to avoid keyboard overlap
+      const isMobile = window.innerWidth < 768
+      setSelectionPosition({
+        x: rect.left + rect.width / 2,
+        y: isMobile ? Math.max(10, rect.top - 10) : rect.bottom + 10,
+      })
+    }, 100) // Small delay for mobile selection to complete
   }, [])
 
   useEffect(() => {
+    // Handle both mouse and touch events for mobile support
+    const handleMouseUp = (e: MouseEvent) => handleSelection(e)
+    const handleTouchEnd = (e: TouchEvent) => handleSelection(e)
+    
     window.document.addEventListener('mouseup', handleMouseUp)
+    window.document.addEventListener('touchend', handleTouchEnd)
     return () => {
       window.document.removeEventListener('mouseup', handleMouseUp)
+      window.document.removeEventListener('touchend', handleTouchEnd)
     }
-  }, [handleMouseUp])
+  }, [handleSelection])
 
   // Handle scroll to show/hide scroll-to-top button (for desktop ScrollArea)
   useEffect(() => {

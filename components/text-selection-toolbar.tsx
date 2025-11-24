@@ -39,24 +39,45 @@ export default function TextSelectionToolbar({
       const rect = toolbarRef.current.getBoundingClientRect()
       const viewportWidth = window.innerWidth
       const viewportHeight = window.innerHeight
+      const isMobile = viewportWidth < 768
 
       let adjustedX = position.x
-      let adjustedY = position.y + 20
+      let adjustedY = position.y
 
-      if (rect.right > viewportWidth) {
-        adjustedX = viewportWidth - rect.width - 10
-      }
-      if (adjustedX < 10) {
-        adjustedX = 10
-      }
-      if (rect.bottom > viewportHeight) {
-        adjustedY = position.y - rect.height - 10
-      }
-      if (adjustedY < 10) {
-        adjustedY = 10
+      if (isMobile) {
+        // On mobile, center the toolbar horizontally
+        adjustedX = viewportWidth / 2
+        // Position above selection, but ensure it's visible
+        if (position.y < rect.height + 20) {
+          adjustedY = Math.min(position.y + rect.height + 30, viewportHeight - rect.height - 10)
+        } else {
+          adjustedY = Math.max(10, position.y - 10)
+        }
+      } else {
+        // Desktop positioning
+        adjustedY = position.y + 20
+        if (rect.right > viewportWidth) {
+          adjustedX = viewportWidth - rect.width - 10
+        }
+        if (adjustedX < 10) {
+          adjustedX = 10
+        }
+        if (rect.bottom > viewportHeight) {
+          adjustedY = position.y - rect.height - 10
+        }
       }
 
-      if (adjustedX !== position.x || adjustedY !== position.y + 20) {
+      // Ensure toolbar stays within viewport bounds
+      if (adjustedX < 10) adjustedX = 10
+      if (adjustedX + rect.width > viewportWidth - 10) {
+        adjustedX = Math.max(10, viewportWidth - rect.width - 10)
+      }
+      if (adjustedY < 10) adjustedY = 10
+      if (adjustedY + rect.height > viewportHeight - 10) {
+        adjustedY = Math.max(10, viewportHeight - rect.height - 10)
+      }
+
+      if (adjustedX !== position.x || adjustedY !== position.y) {
         setDragPosition({ x: adjustedX, y: adjustedY })
       }
     }
@@ -279,14 +300,18 @@ export default function TextSelectionToolbar({
     )
   }
 
+  const isMobile = typeof window !== 'undefined' && window.innerWidth < 768
+  
   return (
     <div
       ref={toolbarRef}
       data-selection-toolbar
-      className="fixed z-50 flex gap-2 rounded-lg border bg-white p-2 shadow-lg"
+      className="fixed z-50 flex gap-2 rounded-lg border bg-white p-2 shadow-lg touch-none"
       style={{
-        left: `${initialPosition.x}px`,
+        left: isMobile ? '50%' : `${initialPosition.x}px`,
         top: `${initialPosition.y}px`,
+        transform: isMobile ? 'translateX(-50%)' : 'none',
+        maxWidth: isMobile ? 'calc(100vw - 20px)' : 'none',
       }}
     >
       <Button
