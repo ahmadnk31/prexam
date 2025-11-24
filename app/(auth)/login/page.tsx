@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { ArrowLeft } from 'lucide-react'
 
 export default function LoginPage() {
   const [email, setEmail] = useState('')
@@ -43,7 +44,16 @@ export default function LoginPage() {
     <div className="flex min-h-screen items-center justify-center gradient-outseta px-4">
       <Card className="w-full max-w-md bg-white/95 backdrop-blur-sm shadow-2xl border-purple-100">
         <CardHeader className="space-y-2">
-          <CardTitle className="text-3xl font-bold text-[#4B3F72]">Login</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-3xl font-bold text-[#4B3F72]">Login</CardTitle>
+            <Link 
+              href="/" 
+              className="flex items-center gap-1 text-sm text-purple-700/70 hover:text-[#4B3F72] font-medium transition-colors"
+            >
+              <ArrowLeft className="h-4 w-4" />
+              Back
+            </Link>
+          </div>
           <CardDescription className="text-purple-700/70 font-medium">
             Enter your credentials to access your study materials
           </CardDescription>

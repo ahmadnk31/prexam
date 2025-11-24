@@ -47,9 +47,8 @@ export default async function DashboardLayout({
     <div className="min-h-screen gradient-outseta-subtle">
       <nav className="sticky top-0 z-50 border-b border-purple-200/50 bg-white/80 backdrop-blur-md shadow-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 py-3 sm:py-4">
-          <Link href="/dashboard/library" className="flex items-center gap-2 text-xl sm:text-2xl font-bold text-[#4B3F72] hover:text-[#5A4A82] transition-colors">
-            <Brain className="h-5 w-5 sm:h-7 sm:w-7 text-[#4B3F72]" />
-            <span className="hidden sm:inline">Prexam</span>
+          <Link href="/dashboard/library" className="hover:opacity-80 transition-opacity">
+            <SummaryrLogo size={40} />
           </Link>
           
           {/* Desktop Navigation */}

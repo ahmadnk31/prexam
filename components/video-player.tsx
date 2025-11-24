@@ -220,7 +220,8 @@ function YouTubePlayer({
   if (!youtubeId) return null
 
   const playerId = `youtube-player-${youtubeId}`
-  const embedUrl = `https://www.youtube.com/embed/${youtubeId}?enablejsapi=1&playsinline=1&controls=1&rel=0&origin=${typeof window !== 'undefined' ? window.location.origin : ''}`
+  // Note: origin parameter removed to avoid hydration mismatch (it's optional anyway)
+  const embedUrl = `https://www.youtube.com/embed/${youtubeId}?enablejsapi=1&playsinline=1&controls=1&rel=0`
 
   return (
     <div className="w-full aspect-video relative bg-black rounded-lg overflow-hidden">

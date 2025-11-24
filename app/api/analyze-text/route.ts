@@ -44,8 +44,8 @@ export async function POST(req: NextRequest) {
         const initialResult = await supabase
           .from('documents')
           .select('user_id, language')
-          .eq('id', videoId)
-          .single()
+        .eq('id', videoId)
+        .single()
 
         document = initialResult.data as DocumentType
         documentError = initialResult.error
@@ -53,10 +53,10 @@ export async function POST(req: NextRequest) {
         // If error is due to missing language column, retry without it
         if (documentError && documentError.code === '42703' && documentError.message?.includes('language')) {
           const retryResult = await supabase
-            .from('documents')
-            .select('user_id')
-            .eq('id', videoId)
-            .single()
+          .from('documents')
+          .select('user_id')
+          .eq('id', videoId)
+          .single()
           // Retry result doesn't have language
           document = retryResult.data as DocumentType
           documentError = retryResult.error

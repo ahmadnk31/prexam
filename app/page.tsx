@@ -8,13 +8,12 @@ export const metadata: Metadata = {
   title: 'Home',
   description: 'Transform videos and documents into flashcards and practice questions with AI. Study smarter with automated transcription, spaced repetition flashcards, and AI-generated quizzes.',
   openGraph: {
-    title: 'Prexam - AI-Powered Study Platform',
+    title: 'Summaryr - AI-Powered Study Platform',
     description: 'Transform videos and documents into flashcards and practice questions with AI. Study smarter with automated transcription, spaced repetition flashcards, and AI-generated quizzes.',
     type: 'website',
   },
 }
 import { 
-  Brain, 
   Video, 
   BookOpen, 
   HelpCircle, 
@@ -30,7 +29,9 @@ import {
   TrendingUp,
   Award,
   Clock,
+  Brain,
 } from 'lucide-react'
+import SummaryrLogo from '@/components/summaryr-logo'
 
 export default async function Home() {
   const supabase = await createClient()
@@ -75,12 +76,12 @@ export default async function Home() {
     },
   ]
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://prexam.com'
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://summaryr.com'
   
   const structuredData = {
     "@context": "https://schema.org",
     "@type": "WebApplication",
-    "name": "Prexam",
+    "name": "Summaryr",
     "description": "AI-powered study platform that transforms videos and documents into flashcards and practice questions",
     "url": baseUrl,
     "applicationCategory": "EducationalApplication",
@@ -111,56 +112,64 @@ export default async function Home() {
         type="application/ld+json"
         dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
       />
-    <div className="flex min-h-screen flex-col bg-gradient-to-br from-pink-200 via-purple-200 to-yellow-200">
-      {/* Navigation */}
-      <nav className="sticky top-4 z-50 px-4 sm:px-6 pt-4">
-        <div className="mx-auto max-w-7xl">
-          <div className="flex items-center justify-between rounded-2xl border border-purple-200/50 bg-white/95 backdrop-blur-md shadow-lg px-6 py-4">
-            {/* Logo */}
-            <Link href="/" className="flex items-center gap-2 text-xl font-bold text-[#4B3F72] hover:text-[#5A4A82] transition-colors">
-              <Brain className="h-6 w-6 text-[#4B3F72]" />
-              Prexam
-            </Link>
+    <div className="flex min-h-screen flex-col bg-white">
+      {/* Hero Section with Gradient Background */}
+     {/* Hero Section with Gradient Background */}
+     <section className="relative overflow-hidden bg-gradient-to-br from-pink-200 via-yellow-100 to-yellow-200">
+        {/* Navigation */}
+        <nav className="sticky top-4 z-50 px-4 sm:px-6 pt-4 pb-4">
+          <div className="mx-auto max-w-7xl">
+            <div className="flex items-center justify-between rounded-2xl border border-purple-200/50 bg-gradient-to-br from-yellow-200 via-yellow-100 to-pink-200 shadow-lg px-6 py-4">
+              {/* Logo */}
+              <Link href="/" className="hover:opacity-80 transition-opacity">
+                <SummaryrLogo size={68} />
+              </Link>
 
-            {/* Right Side Actions */}
-            <div className="flex items-center gap-3">
-              <Link href="/login">
-                <Button variant="ghost" className="text-[#4B3F72] hover:bg-purple-50 font-medium">Log in</Button>
-              </Link>
-              <Link href="/signup">
-                <Button className="bg-[#FBBF24] hover:bg-[#F59E0B] text-[#1F2937] font-semibold shadow-md hover:shadow-lg transition-all">Sign up</Button>
-              </Link>
+              {/* Right Side Actions */}
+              <div className="flex items-center gap-3">
+                <Link href="/login">
+                  <Button variant="ghost" className="text-[#4B3F72] hover:bg-purple-50 font-medium">Log in</Button>
+                </Link>
+                <Link href="/signup">
+                  <Button className="bg-[#FBBF24] hover:bg-[#F59E0B] text-[#1F2937] font-semibold shadow-md hover:shadow-lg transition-all">Sign up</Button>
+                </Link>
+              </div>
             </div>
           </div>
-        </div>
-      </nav>
+        </nav>
 
-      {/* Hero Section */}
-      <section className="relative overflow-hidden py-20 sm:py-28">
-        <div className="relative mx-auto max-w-7xl px-6">
-          <div className="mx-auto max-w-4xl text-center">
-            {/* Main Headline - Large and Bold */}
-            <h1 className="mb-6 text-6xl font-bold tracking-tight text-[#4B3F72] sm:text-7xl lg:text-8xl animate-fade-in-up delay-200">
-              The Study Operating System
-          </h1>
-            
-            {/* Sub-headline - Descriptive text */}
-            <p className="mb-10 text-xl text-[#4B3F72]/90 sm:text-2xl font-normal leading-relaxed max-w-3xl mx-auto animate-fade-in-up delay-300">
-              Upload any video, get instant flashcards and practice questions. Ditch the manual note-taking and transform your videos into comprehensive study materials using AI-powered learning tools.
-            </p>
-            
-            {/* CTA Buttons - Two yellow buttons centered */}
-            <div className="flex flex-col items-center justify-center gap-4 sm:flex-row sm:gap-4 animate-fade-in-up delay-400">
-              <Link href="/signup">
-                <Button size="lg" className="group bg-[#FBBF24] hover:bg-[#F59E0B] text-[#1F2937] font-semibold shadow-lg hover:shadow-xl transition-all hover:scale-105 text-lg px-8 py-6">
-                  Sign up for free
-                </Button>
-              </Link>
-              <Link href="#features">
-                <Button size="lg" className="group bg-[#FBBF24] hover:bg-[#F59E0B] text-[#1F2937] font-semibold shadow-lg hover:shadow-xl transition-all hover:scale-105 text-lg px-8 py-6">
-                  Is Prexam for me?
-                </Button>
-              </Link>
+        {/* Hero Content */}
+        <div className="relative py-20 sm:py-28">
+          <div className="relative mx-auto max-w-7xl px-6">
+            <div className="mx-auto max-w-4xl text-center">
+              {/* Slogan - Tagline */}
+              <p className="mb-4 text-lg sm:text-xl font-semibold text-[#4B3F72]/80 animate-fade-in-up delay-100">
+                Transform Content into Knowledge
+              </p>
+              
+              {/* Main Headline - Large and Bold */}
+              <h1 className="mb-6 text-6xl font-bold tracking-tight text-[#4B3F72] sm:text-7xl lg:text-8xl animate-fade-in-up delay-200">
+                The Study Operating System
+              </h1>
+              
+              {/* Sub-headline - Descriptive text */}
+              <p className="mb-10 text-xl text-[#4B3F72]/90 sm:text-2xl font-normal leading-relaxed max-w-3xl mx-auto animate-fade-in-up delay-300">
+                Upload any video, get instant flashcards and practice questions. Ditch the manual note-taking and transform your videos into comprehensive study materials using AI-powered learning tools.
+              </p>
+              
+              {/* CTA Buttons - Two yellow buttons centered */}
+              <div className="flex flex-col items-center justify-center gap-4 sm:flex-row sm:gap-4 animate-fade-in-up delay-400">
+                <Link href="/signup">
+                  <Button size="lg" className="group bg-[#FBBF24] hover:bg-[#F59E0B] text-[#1F2937] font-semibold shadow-lg hover:shadow-xl transition-all hover:scale-105 text-lg px-8 py-6">
+                    Sign up for free
+                  </Button>
+                </Link>
+                <Link href="#features">
+                  <Button size="lg" className="group hover:bg-white bg-transparent text-[#1F2937] font-semibold hover:shadow-xl transition-all hover:scale-105 text-lg px-8 py-6">
+                    Features
+                  </Button>
+                </Link>
+              </div>
             </div>
           </div>
         </div>
@@ -197,8 +206,8 @@ export default async function Home() {
             <div className="border-b border-purple-300/30 bg-[#4B3F72]/50 backdrop-blur-sm px-6 py-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <Brain className="h-6 w-6 text-white" />
-                  <span className="text-xl font-bold text-white">Prexam Dashboard</span>
+                  <SummaryrLogo size={32} variant="white" />
+                  <span className="text-xl font-bold text-white">Summaryr Dashboard</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="h-3 w-3 rounded-full bg-green-400"></div>
@@ -317,7 +326,7 @@ export default async function Home() {
           <div className="mb-12 text-center animate-fade-in-up delay-100">
             <h2 className="mb-4 text-4xl font-bold text-[#4B3F72]">Loved by Students Worldwide</h2>
             <p className="text-lg text-purple-700/70 font-medium">
-              See what our users are saying about Prexam
+              See what our users are saying about Summaryr
             </p>
           </div>
           <div className="grid gap-6 md:grid-cols-3">
@@ -328,7 +337,7 @@ export default async function Home() {
                 ))}
               </div>
               <p className="mb-4 text-purple-700/80 font-medium leading-relaxed">
-                "Prexam transformed how I study. The AI-generated flashcards are incredibly accurate and the spaced repetition system actually works!"
+                "Summaryr transformed how I study. The AI-generated flashcards are incredibly accurate and the spaced repetition system actually works!"
               </p>
               <div className="flex items-center gap-3">
                 <div className="h-10 w-10 rounded-full bg-gradient-to-br from-purple-200 to-yellow-200 flex items-center justify-center">
@@ -457,7 +466,7 @@ export default async function Home() {
       <section className="py-24">
         <div className="mx-auto max-w-7xl px-6">
           <div className="mb-16 text-center animate-fade-in-up delay-100">
-            <h2 className="mb-6 text-5xl font-bold text-[#4B3F72]">Why Choose Prexam?</h2>
+            <h2 className="mb-6 text-5xl font-bold text-[#4B3F72]">Why Choose Summaryr?</h2>
             <p className="text-xl text-purple-700/70 font-medium">
               Built for students, trusted by thousands
             </p>
@@ -516,7 +525,7 @@ export default async function Home() {
             Ready to Transform Your Learning?
           </h2>
           <p className="mb-8 text-xl text-purple-100 font-medium animate-fade-in-up delay-200">
-            Join 10,000+ students who are studying smarter with Prexam
+            Join 10,000+ students who are studying smarter with Summaryr
           </p>
           
           {/* Trust Badges */}
@@ -556,10 +565,9 @@ export default async function Home() {
       <footer className="border-t border-purple-200 bg-white py-12">
         <div className="mx-auto max-w-7xl px-6">
           <div className="flex flex-col items-center justify-between gap-4 sm:flex-row">
-            <div className="flex items-center gap-2">
-              <Brain className="h-6 w-6 text-[#4B3F72]" />
-              <span className="text-xl font-bold text-[#4B3F72]">Prexam</span>
-            </div>
+            <Link href="/" className="hover:opacity-80 transition-opacity">
+              <SummaryrLogo size={40} />
+            </Link>
             <div className="flex gap-6 text-sm text-purple-700/70 font-medium">
               <Link href="#" className="hover:text-[#4B3F72] transition-colors">Privacy</Link>
               <Link href="#" className="hover:text-[#4B3F72] transition-colors">Terms</Link>
@@ -567,7 +575,7 @@ export default async function Home() {
             </div>
           </div>
           <div className="mt-8 text-center text-sm text-purple-600/60 font-medium">
-            © {new Date().getFullYear()} Prexam. All rights reserved.
+            © {new Date().getFullYear()} Summaryr. All rights reserved.
           </div>
         </div>
       </footer>

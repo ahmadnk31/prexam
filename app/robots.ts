@@ -1,7 +1,7 @@
 import { MetadataRoute } from 'next'
 
 function getBaseUrl() {
-  const url = process.env.NEXT_PUBLIC_APP_URL || 'https://prexam.com'
+  const url = process.env.NEXT_PUBLIC_APP_URL || 'https://summaryr.com'
   if (url && !url.startsWith('http://') && !url.startsWith('https://')) {
     return `https://${url}`
   }
