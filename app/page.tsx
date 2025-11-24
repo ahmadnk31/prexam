@@ -206,8 +206,8 @@ export default async function Home() {
             <div className="border-b border-purple-300/30 bg-[#4B3F72]/50 backdrop-blur-sm px-6 py-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <SummaryrLogo size={32} variant="white" />
-                  <span className="text-xl font-bold text-white">Summaryr Dashboard</span>
+                  <SummaryrLogo size={32} />
+                  <span className="text-xl font-bold text-white">Dashboard</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <div className="h-3 w-3 rounded-full bg-green-400"></div>
