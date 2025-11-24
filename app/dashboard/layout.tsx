@@ -19,6 +19,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
+import SummaryrLogo from '@/components/summaryr-logo'
 
 export default async function DashboardLayout({
   children,
@@ -48,7 +49,7 @@ export default async function DashboardLayout({
       <nav className="sticky top-0 z-50 border-b border-purple-200/50 bg-white/80 backdrop-blur-md shadow-sm">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 sm:px-6 py-3 sm:py-4">
           <Link href="/dashboard/library" className="hover:opacity-80 transition-opacity">
-            <SummaryrLogo size={40} />
+            <SummaryrLogo size={68} />
           </Link>
           
           {/* Desktop Navigation */}
