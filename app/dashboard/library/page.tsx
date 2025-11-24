@@ -98,28 +98,28 @@ export default async function LibraryPage() {
         </TabsList>
 
         <TabsContent value="videos">
-          {videos.length === 0 ? (
-            <Card className="border-2 border-dashed border-purple-200 bg-white/80 backdrop-blur-sm">
+      {videos.length === 0 ? (
+        <Card className="border-2 border-dashed border-purple-200 bg-white/80 backdrop-blur-sm">
               <CardContent className="flex flex-col items-center justify-center py-12 sm:py-20 px-4">
                 <div className="mb-4 sm:mb-6 rounded-full bg-gradient-to-br from-purple-100 to-yellow-100 p-4 sm:p-6">
                   <Video className="h-12 w-12 sm:h-16 sm:w-16 text-[#4B3F72]" />
-                </div>
+            </div>
                 <h3 className="mb-2 sm:mb-3 text-xl sm:text-2xl font-bold text-[#4B3F72]">No videos yet</h3>
                 <p className="mb-6 sm:mb-8 text-center text-purple-700/70 max-w-md text-sm sm:text-base font-medium">
-                  Get started by uploading your first video or pasting a YouTube link. 
-                  We'll automatically generate flashcards and questions for you.
-                </p>
+              Get started by uploading your first video or pasting a YouTube link. 
+              We'll automatically generate flashcards and questions for you.
+            </p>
                 <Link href="/dashboard/upload" className="w-full sm:w-auto">
                   <Button size="lg" className="w-full sm:w-auto gap-2 bg-[#FBBF24] hover:bg-[#F59E0B] text-[#1F2937] font-semibold shadow-lg hover:shadow-xl transition-all">
-                    <Plus className="h-5 w-5" />
-                    Upload Your First Video
-                  </Button>
-                </Link>
-              </CardContent>
-            </Card>
-          ) : (
+                <Plus className="h-5 w-5" />
+                Upload Your First Video
+              </Button>
+            </Link>
+          </CardContent>
+        </Card>
+      ) : (
             <div className="grid grid-cols-1 gap-4 sm:gap-6 sm:grid-cols-2 lg:grid-cols-3">
-              {videos.map((video: any) => (
+          {videos.map((video: any) => (
             <Card key={video.id} className="group transition-all hover:shadow-xl hover:-translate-y-1 bg-white border-purple-100/50 shadow-md">
               <CardHeader className="pb-3 px-4 sm:px-6">
                 <div className="mb-2 flex items-start justify-between gap-2">
@@ -207,9 +207,9 @@ export default async function LibraryPage() {
                 </div>
               </CardContent>
             </Card>
-              ))}
-            </div>
-          )}
+          ))}
+        </div>
+      )}
         </TabsContent>
 
         <TabsContent value="documents">

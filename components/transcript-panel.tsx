@@ -41,14 +41,29 @@ export default function TranscriptPanel({
   useEffect(() => {
     if (segments.length === 0) return
 
+    // Use a small tolerance to handle timing differences
+    const tolerance = 0.5 // 0.5 seconds tolerance
     const activeIndex = segments.findIndex(
-      (segment) => currentTime >= segment.start_time && currentTime <= segment.end_time
+      (segment) => 
+        currentTime >= (segment.start_time - tolerance) && 
+        currentTime <= (segment.end_time + tolerance)
     )
 
     if (activeIndex !== -1 && activeIndex !== activeSegmentIndex) {
       setActiveSegmentIndex(activeIndex)
     } else if (activeIndex === -1) {
-      setActiveSegmentIndex(null)
+      // Check if we're between segments (within tolerance)
+      const isBetweenSegments = segments.some(
+        (segment, idx) => 
+          idx < segments.length - 1 &&
+          currentTime > (segment.end_time - tolerance) &&
+          currentTime < (segments[idx + 1].start_time + tolerance)
+      )
+      
+      // If not between segments and we had an active segment, clear it
+      if (!isBetweenSegments && activeSegmentIndex !== null) {
+        setActiveSegmentIndex(null)
+      }
     }
   }, [currentTime, segments, activeSegmentIndex])
 

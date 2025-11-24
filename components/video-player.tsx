@@ -2,7 +2,7 @@
 
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useEffect, useRef, useImperativeHandle, forwardRef } from 'react'
+import { useEffect, useRef, useImperativeHandle, forwardRef, useState } from 'react'
 
 // YouTube IFrame API types
 declare global {
@@ -35,6 +35,8 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
     const youtubePlayerRef = useRef<any>(null)
     const youtubeIdRef = useRef<string | null>(null)
     const timeUpdateIntervalRef = useRef<NodeJS.Timeout | null>(null)
+    const [youtubePlayerReady, setYoutubePlayerReady] = useState(false)
+    const [youtubeError, setYoutubeError] = useState<string | null>(null)
     // Extract YouTube video ID from various URL formats
     function extractYouTubeId(url: string | null | undefined): string | null {
       if (!url) return null
@@ -88,68 +90,179 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       if (!video.youtube_url) return
 
       const youtubeId = extractYouTubeId(video.youtube_url)
-      if (!youtubeId) return
+      if (!youtubeId) {
+        console.error('Could not extract YouTube ID from URL:', video.youtube_url)
+        setYoutubeError('Invalid YouTube URL format')
+        return
+      }
 
+      console.log('Setting up YouTube player for ID:', youtubeId)
       youtubeIdRef.current = youtubeId
       let playerInitialized = false
+      let retryCount = 0
+      const maxRetries = 30 // 3 seconds max wait
 
       const initializePlayer = () => {
         if (playerInitialized || !youtubeIdRef.current) return
-        playerInitialized = true
 
         const playerId = `youtube-player-${youtubeIdRef.current}`
         const container = document.getElementById(playerId)
+        
         if (!container) {
-          // Wait a bit for the DOM to be ready
+          retryCount++
+          if (retryCount < maxRetries) {
+            // Wait a bit for the DOM to be ready
+            setTimeout(initializePlayer, 100)
+            return
+          } else {
+            const errorMsg = `YouTube player container not found after ${maxRetries} retries: ${playerId}`
+            console.error(errorMsg)
+            setYoutubeError(errorMsg)
+            return
+          }
+        }
+        
+        // Ensure container has proper dimensions
+        if (container) {
+          const rect = container.getBoundingClientRect()
+          console.log('Container dimensions:', { width: rect.width, height: rect.height })
+          if (rect.width === 0 || rect.height === 0) {
+            console.warn('Container has zero dimensions, this may cause player issues')
+          }
+        }
+
+        // Check if API is ready
+        if (!window.YT || !window.YT.Player) {
+          console.warn('YouTube API not ready yet, retrying...')
           setTimeout(initializePlayer, 100)
           return
         }
 
-        youtubePlayerRef.current = new window.YT.Player(playerId, {
-          videoId: youtubeIdRef.current,
-          playerVars: {
-            enablejsapi: 1,
-            origin: window.location.origin,
-          },
-          events: {
-            onReady: () => {
-              // Start polling for time updates when ready
-              if (onTimeUpdate) {
-                timeUpdateIntervalRef.current = setInterval(() => {
-                  if (youtubePlayerRef.current) {
-                    try {
-                      const currentTime = youtubePlayerRef.current.getCurrentTime()
-                      if (currentTime !== undefined && currentTime !== null) {
-                        onTimeUpdate(currentTime)
-                      }
-                    } catch (e) {
-                      // Player might not be ready yet
-                    }
+        playerInitialized = true
+        console.log('Initializing YouTube player for:', youtubeIdRef.current)
+
+        try {
+          youtubePlayerRef.current = new window.YT.Player(playerId, {
+            videoId: youtubeIdRef.current,
+            width: '100%',
+            height: '100%',
+            playerVars: {
+              enablejsapi: 1,
+              origin: window.location.origin,
+              playsinline: 1,
+              autoplay: 0,
+              controls: 1,
+              rel: 0,
+              modestbranding: 1,
+            },
+            events: {
+              onReady: (event: any) => {
+                console.log('YouTube player ready, starting time update polling')
+                setYoutubePlayerReady(true)
+                setYoutubeError(null)
+                // Start polling for time updates when ready
+                if (onTimeUpdate) {
+                  // Clear any existing interval
+                  if (timeUpdateIntervalRef.current) {
+                    clearInterval(timeUpdateIntervalRef.current)
                   }
-                }, 250) // Update every 250ms for smoother sync
-              }
+                  timeUpdateIntervalRef.current = setInterval(() => {
+                    if (youtubePlayerRef.current) {
+                      try {
+                        const currentTime = youtubePlayerRef.current.getCurrentTime()
+                        if (currentTime !== undefined && currentTime !== null && !isNaN(currentTime) && currentTime > 0) {
+                          onTimeUpdate(currentTime)
+                        }
+                      } catch (e) {
+                        // Player might not be ready yet or video paused
+                      }
+                    }
+                  }, 100) // Update every 100ms for smoother sync
+                }
+              },
+              onError: (event: any) => {
+                console.error('YouTube player error:', event.data)
+                setYoutubeError(`Error ${event.data}`)
+                // Error codes: 2=invalid ID, 5=HTML5 error, 100=video not found, 101/150=not allowed
+                if (event.data === 100 || event.data === 101 || event.data === 150) {
+                  const errorMsg = 'Video is not available (private, restricted, or removed)'
+                  console.error(errorMsg)
+                  setYoutubeError(errorMsg)
+                }
+              },
+              onStateChange: (event: any) => {
+                // States: -1=unstarted, 0=ended, 1=playing, 2=paused, 3=buffering, 5=cued
+                if (event.data === window.YT.PlayerState.PLAYING) {
+                  console.log('YouTube video started playing')
+                }
+              },
             },
-            onStateChange: (event: any) => {
-              // Continue polling regardless of state for better sync
-              // The interval is already running from onReady
-            },
-          },
-        })
+          })
+        } catch (error) {
+          console.error('Error creating YouTube player:', error)
+          playerInitialized = false
+        }
       }
 
       // Load YouTube IFrame API
       if (!window.YT) {
+        console.log('Loading YouTube IFrame API...')
         const tag = document.createElement('script')
         tag.src = 'https://www.youtube.com/iframe_api'
+        tag.async = true
+        tag.defer = true
+        
+        // Handle script load errors
+        tag.onerror = () => {
+          console.error('Failed to load YouTube IFrame API - check network or ad blockers')
+        }
+        
         const firstScriptTag = document.getElementsByTagName('script')[0]
-        firstScriptTag.parentNode?.insertBefore(tag, firstScriptTag)
+        if (firstScriptTag && firstScriptTag.parentNode) {
+          firstScriptTag.parentNode.insertBefore(tag, firstScriptTag)
+        } else {
+          document.head.appendChild(tag)
+        }
+
+        // Store the original callback if it exists
+        const originalCallback = window.onYouTubeIframeAPIReady
 
         window.onYouTubeIframeAPIReady = () => {
-          initializePlayer()
+          console.log('YouTube IFrame API ready')
+          if (originalCallback) {
+            originalCallback()
+          }
+          // Wait a bit for DOM to be ready
+          setTimeout(() => {
+            initializePlayer()
+          }, 300)
         }
-      } else if (window.YT.Player) {
+      } else if (window.YT && window.YT.Player) {
         // API already loaded
-        initializePlayer()
+        console.log('YouTube API already loaded, initializing player...')
+        setTimeout(() => {
+          initializePlayer()
+        }, 200)
+      } else {
+        // API is loading but not ready yet
+        console.log('YouTube API loading, waiting...')
+        const checkInterval = setInterval(() => {
+          if (window.YT && window.YT.Player) {
+            clearInterval(checkInterval)
+            console.log('YouTube API became ready, initializing player...')
+            setTimeout(() => {
+              initializePlayer()
+            }, 200)
+          }
+        }, 100)
+        
+        // Timeout after 5 seconds
+        setTimeout(() => {
+          clearInterval(checkInterval)
+          if (!playerInitialized) {
+            console.error('YouTube API failed to load within 5 seconds')
+          }
+        }, 5000)
       }
 
       return () => {
@@ -166,6 +279,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           youtubePlayerRef.current = null
         }
         playerInitialized = false
+        retryCount = 0
       }
     }, [video.youtube_url, onTimeUpdate])
 
@@ -234,7 +348,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       }
     }, [video.video_url, video.youtube_url, video.status, onTimeUpdate])
 
-    // For YouTube videos, show them immediately regardless of status
+    // For YouTube videos, use iframe embed with YouTube IFrame API for time tracking
     if (video.youtube_url) {
       const youtubeId = extractYouTubeId(video.youtube_url)
       
@@ -242,7 +356,24 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         return (
           <Card>
             <CardContent className="p-0">
-              <div id={`youtube-player-${youtubeId}`} className="aspect-video w-full rounded-lg" />
+              <div className="aspect-video w-full rounded-lg overflow-hidden bg-black relative">
+                {!youtubePlayerReady && !youtubeError && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
+                    <div className="text-white text-sm">Loading YouTube player...</div>
+                  </div>
+                )}
+                {youtubeError && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black z-10">
+                    <div className="text-red-400 text-sm text-center px-4">
+                      {youtubeError}
+                    </div>
+                  </div>
+                )}
+                <div 
+                  id={`youtube-player-${youtubeId}`} 
+                  className="w-full h-full"
+                />
+              </div>
             </CardContent>
           </Card>
         )

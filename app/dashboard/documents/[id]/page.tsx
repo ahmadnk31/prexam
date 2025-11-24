@@ -1,6 +1,7 @@
 import { createClient } from '@/supabase/server'
 import { notFound, redirect } from 'next/navigation'
 import DocumentPageClient from '@/components/document-page-client'
+import type { Metadata } from 'next'
 
 async function getDocument(id: string) {
   const supabase = await createClient()
@@ -46,6 +47,46 @@ async function getDocumentChunks(documentId: string) {
   return data || []
 }
 
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}): Promise<Metadata> {
+  const { id } = await params
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return {
+      title: 'Document',
+    }
+  }
+
+  const { data: document } = await supabase
+    .from('documents')
+    .select('title')
+    .eq('id', id)
+    .eq('user_id', user.id)
+    .single()
+
+  if (!document) {
+    return {
+      title: 'Document Not Found',
+    }
+  }
+
+  return {
+    title: document.title,
+    description: `Study ${document.title} with AI-generated flashcards, quizzes, and summaries. Transform your document into interactive study materials.`,
+    robots: {
+      index: false,
+      follow: false,
+    },
+  }
+}
+
 export default async function DocumentPage({
   params,
 }: {
@@ -64,8 +105,8 @@ export default async function DocumentPage({
     <DocumentPageClient
       initialDocument={document}
       initialChunks={chunks}
-      documentId={id}
-    />
+              documentId={id}
+            />
   )
 }
 

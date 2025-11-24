@@ -13,8 +13,8 @@ function bufferToStream(buffer: Buffer) {
 async function extractPDFText(fileBuffer: Buffer): Promise<{ text: string; pageCount: number }> {
   // Use pdf-parse for reliable PDF text extraction
   const data = await pdfParse(fileBuffer)
-  
-  return {
+    
+    return {
     text: data.text,
     pageCount: data.numpages || 1,
   }

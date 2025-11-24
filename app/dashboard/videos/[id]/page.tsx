@@ -1,12 +1,7 @@
 import { createClient } from '@/supabase/server'
-import { notFound, redirect } from 'next/navigation'
-import VideoPlayer, { VideoPlayerRef } from '@/components/video-player'
-import TranscriptPanel from '@/components/transcript-panel'
-import AIToolsPanel from '@/components/ai-tools-panel'
-import { Card, CardContent } from '@/components/ui/card'
-import { transcribeVideo } from '@/lib/transcribe'
-import VideoTranscriptSync from '@/components/video-transcript-sync'
-import ResizableLayout from '@/components/resizable-layout'
+import { notFound } from 'next/navigation'
+import VideoPageClient from '@/components/video-page-client'
+import type { Metadata } from 'next'
 
 async function getVideo(id: string) {
   const supabase = await createClient()
@@ -52,6 +47,46 @@ async function getSegments(videoId: string) {
   return data || []
 }
 
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ id: string }>
+}): Promise<Metadata> {
+  const { id } = await params
+  const supabase = await createClient()
+  const {
+    data: { user },
+  } = await supabase.auth.getUser()
+
+  if (!user) {
+    return {
+      title: 'Video',
+    }
+  }
+
+  const { data: video } = await supabase
+    .from('videos')
+    .select('title')
+    .eq('id', id)
+    .eq('user_id', user.id)
+    .single()
+
+  if (!video) {
+    return {
+      title: 'Video Not Found',
+    }
+  }
+
+  return {
+    title: video.title,
+    description: `Study ${video.title} with AI-generated flashcards, quizzes, and transcript. Transform your video into interactive study materials.`,
+    robots: {
+      index: false,
+      follow: false,
+    },
+  }
+}
+
 export default async function VideoPage({
   params,
 }: {
@@ -73,6 +108,7 @@ export default async function VideoPage({
     status: video.status,
     youtube_url: video.youtube_url,
     video_url: video.video_url,
+    segmentsCount: segments.length,
   })
 
   return (
@@ -94,109 +130,11 @@ export default async function VideoPage({
         </div>
       </div>
 
-      <div className="h-auto md:h-[calc(100vh-12rem)] lg:min-h-[600px] lg:max-h-[calc(100vh-12rem)]">
-        <ResizableLayout
-          defaultLeftSize={65}
-          minLeftSize={40}
-          minRightSize={25}
-          leftPanel={
-            <VideoTranscriptSync
-              video={video}
-              segments={segments}
-              videoId={id}
-            />
-          }
-          rightPanel={
-            <div className="h-full">
-              {video.status === 'ready' && (
-                <AIToolsPanel videoId={id} />
-              )}
-              {video.youtube_url && video.status === 'error' && (
-                <Card>
-                  <CardContent className="p-6">
-                    <div className="space-y-3">
-                      <div>
-                        <p className="text-sm font-medium text-red-700 mb-1">
-                          ⚠️ YouTube Transcription Failed
-                        </p>
-                        <p className="text-xs text-gray-600 mb-2">
-                          This video could not be transcribed. Common reasons:
-                        </p>
-                        <ul className="text-xs text-gray-600 list-disc list-inside mb-3 space-y-1">
-                          <li>Video does not have captions/subtitles enabled</li>
-                          <li>YouTube is blocking downloads (403 Forbidden)</li>
-                          <li>Video is private, age-restricted, or region-locked</li>
-                        </ul>
-                        <div className="bg-blue-50 border border-blue-200 rounded p-3">
-                          <p className="text-xs font-medium text-blue-800 mb-1">
-                            💡 Recommended Solutions
-                          </p>
-                          <ul className="text-xs text-blue-700 space-y-1 list-disc list-inside">
-                            <li>Try a different video with captions/subtitles enabled</li>
-                            <li>Download the video from YouTube and upload the file directly</li>
-                            <li>Use YouTube's "CC" button to check if captions are available</li>
-                          </ul>
-                        </div>
-                      </div>
-                      <form action={async () => {
-                        'use server'
-                        try {
-                          await transcribeVideo(id)
-                          redirect(`/dashboard/videos/${id}`)
-                        } catch (error: any) {
-                          console.error('Transcription error:', error)
-                          redirect(`/dashboard/videos/${id}`)
-                        }
-                      }}>
-                        <button
-                          type="submit"
-                          className="w-full rounded-md bg-gray-600 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 mt-3"
-                        >
-                          Retry Transcription
-                        </button>
-                      </form>
-                    </div>
-                  </CardContent>
-                </Card>
-              )}
-              {(video.status === 'processing' || video.status === 'transcribing' || (video.status === 'error' && !video.youtube_url)) && (
-                <Card>
-                  <CardContent className="p-6">
-                    <p className="text-sm text-gray-600 mb-4">
-                      {video.status === 'processing' && 'Video is being processed...'}
-                      {video.status === 'transcribing' && 'Video is being transcribed...'}
-                      {video.status === 'error' && !video.youtube_url && 'Transcription failed. Click below to retry.'}
-                    </p>
-                    <form action={async () => {
-                      'use server'
-                      try {
-                        await transcribeVideo(id)
-                        redirect(`/dashboard/videos/${id}`)
-                      } catch (error: any) {
-                        console.error('Transcription error:', error)
-                        // Still redirect to show error status
-                        redirect(`/dashboard/videos/${id}`)
-                      }
-                    }}>
-                      <button
-                        type="submit"
-                        className="w-full rounded-md bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
-                      >
-                        {video.status === 'error' ? 'Retry Transcription' : 'Manually Trigger Transcription'}
-                      </button>
-                    </form>
-                    {video.status === 'error' && (
-                      <p className="text-xs text-gray-500 mt-2">
-                        Check your OpenAI API key and ensure the video file is accessible.
-                      </p>
-                    )}
-                  </CardContent>
-                </Card>
-              )}
-            </div>
-          }
-        />
-      </div>
+      <VideoPageClient
+        initialVideo={video}
+        initialSegments={segments}
+        videoId={id}
+      />
     </div>
   )
 }

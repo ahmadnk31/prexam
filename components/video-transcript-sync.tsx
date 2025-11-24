@@ -33,8 +33,10 @@ export default function VideoTranscriptSync({
   const videoPlayerRef = useRef<VideoPlayerRef>(null)
 
   const handleTimeUpdate = useCallback((time: number) => {
-    setCurrentTime(time)
-  }, [])
+    if (time !== currentTime) {
+      setCurrentTime(time)
+    }
+  }, [currentTime])
 
   const handleSeek = useCallback((time: number) => {
     if (videoPlayerRef.current) {

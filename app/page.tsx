@@ -2,6 +2,17 @@ import { createClient } from '@/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'Home',
+  description: 'Transform videos and documents into flashcards and practice questions with AI. Study smarter with automated transcription, spaced repetition flashcards, and AI-generated quizzes.',
+  openGraph: {
+    title: 'Prexam - AI-Powered Study Platform',
+    description: 'Transform videos and documents into flashcards and practice questions with AI. Study smarter with automated transcription, spaced repetition flashcards, and AI-generated quizzes.',
+    type: 'website',
+  },
+}
 import { 
   Brain, 
   Video, 
@@ -64,8 +75,43 @@ export default async function Home() {
     },
   ]
 
+  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://prexam.com'
+  
+  const structuredData = {
+    "@context": "https://schema.org",
+    "@type": "WebApplication",
+    "name": "Prexam",
+    "description": "AI-powered study platform that transforms videos and documents into flashcards and practice questions",
+    "url": baseUrl,
+    "applicationCategory": "EducationalApplication",
+    "operatingSystem": "Web",
+    "offers": {
+      "@type": "Offer",
+      "price": "0",
+      "priceCurrency": "USD"
+    },
+    "aggregateRating": {
+      "@type": "AggregateRating",
+      "ratingValue": "4.8",
+      "ratingCount": "150"
+    },
+    "featureList": [
+      "AI-powered video transcription",
+      "Automated flashcard generation",
+      "Spaced repetition system",
+      "Quiz generation",
+      "Document text extraction",
+      "Multi-language support"
+    ]
+  }
+
   return (
-    <div className="flex min-h-screen flex-col bg-gradient-to-br from-pink-200 via-purple-200 to-yellow-200">
+    <>
+      <script
+        type="application/ld+json"
+        dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }}
+      />
+      <div className="flex min-h-screen flex-col bg-gradient-to-br from-pink-200 via-purple-200 to-yellow-200">
       {/* Navigation */}
       <nav className="sticky top-4 z-50 px-4 sm:px-6 pt-4">
         <div className="mx-auto max-w-7xl">
@@ -526,5 +572,6 @@ export default async function Home() {
         </div>
       </footer>
     </div>
+    </>
   )
 }

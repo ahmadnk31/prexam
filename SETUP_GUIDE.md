@@ -53,6 +53,11 @@ OPENAI_API_KEY=sk-...your_openai_key_here
 # Free tier: 10,000 units/day (~50 caption downloads/day)
 YOUTUBE_API_KEY=AIza...your_youtube_api_key_here
 
+# Apify API Token (optional, very reliable for YouTube transcripts)
+# Get from https://console.apify.com/account/integrations
+# Apify has a free tier with credits
+APIFY_API_TOKEN=apify_api_...your_apify_token_here
+
 # App URL (for development)
 NEXT_PUBLIC_APP_URL=http://localhost:3000
 ```
@@ -157,6 +162,45 @@ Supabase Dashboard
 ### Note:
 - **For public videos**: The unofficial method works better and doesn't require an API key
 - **For your own videos**: The official API works but requires OAuth setup (not just API key)
-- **Current implementation**: Uses unofficial method for public videos, which is more reliable for this use case
+- **Current implementation**: Uses multiple fallback methods for public videos
 - The API key is mainly useful if you plan to extend the app to manage your own video captions
+
+---
+
+## Apify API Token Setup (Optional - Very Reliable)
+
+Apify provides a reliable YouTube transcript scraper that works well for public videos.
+
+### Benefits:
+- ✅ **Very reliable**: Professional scraping service
+- ✅ **Free tier available**: Get free credits to start
+- ✅ **Works for public videos**: No ownership restrictions
+- ✅ **Better than free methods**: More consistent results
+
+### How to Get an Apify API Token:
+
+1. **Sign up for Apify**
+   - Visit [https://apify.com](https://apify.com)
+   - Create a free account
+
+2. **Get API Token**
+   - Go to [Settings > Integrations](https://console.apify.com/account/integrations)
+   - Copy your API token (starts with `apify_api_...`)
+
+3. **Add to `.env.local`**
+   ```env
+   APIFY_API_TOKEN=apify_api_...your_token_here
+   ```
+
+4. **Restart your dev server**
+
+### Pricing:
+- **Free tier**: Limited credits to start
+- **Pay-as-you-go**: Very affordable per video
+- Check [Apify pricing](https://apify.com/pricing) for current rates
+
+### Note:
+- Apify is used as Method 2 (after official YouTube API if configured)
+- If Apify token is not set, the system falls back to free methods
+- Apify is the most reliable option for public YouTube videos
 

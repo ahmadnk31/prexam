@@ -4,6 +4,8 @@ import { parseWhisperVerboseResponse } from '@/lib/transcript'
 import ytdl from '@distube/ytdl-core'
 import { YoutubeTranscript } from 'youtube-transcript'
 import { getYouTubeCaptions } from '@/lib/youtube-api'
+import { getSubtitles } from 'youtube-captions-scraper'
+import { ApifyClient } from 'apify-client'
 import { readdirSync, unlinkSync } from 'fs'
 import { join } from 'path'
 
@@ -111,31 +113,148 @@ export async function transcribeVideo(videoId: string) {
       transcriptErrors.push('YouTube API key not configured')
     }
     
-    // Method 2: Try unofficial transcript library (no API key needed)
+    // Method 2: Try Apify YouTube Transcript Scraper (requires API token, very reliable)
+    if (!useTranscriptAPI && process.env.APIFY_API_TOKEN) {
+      try {
+        console.log('📡 Method 2: Attempting to fetch YouTube transcript using Apify...')
+        console.log('   Video ID:', youtubeId)
+        
+        const client = new ApifyClient({
+          token: process.env.APIFY_API_TOKEN,
+        })
+        
+        const input = {
+          startUrls: [`https://www.youtube.com/watch?v=${youtubeId}`],
+          language: 'Default',
+          includeTimestamps: 'Yes', // We need timestamps for segments
+        }
+        
+        // Run the Actor and wait for it to finish
+        const run = await client.actor('CTQcdDtqW5dvELvur').call(input)
+        
+        // Fetch results from the run's dataset
+        const { items } = await client.dataset(run.defaultDatasetId).listItems()
+        
+        console.log('Apify returned items:', items?.length || 0)
+        if (items && items.length > 0) {
+          // Log first item to understand structure
+          console.log('First Apify item structure:', JSON.stringify(items[0], null, 2).substring(0, 500))
+          
+          // Apify returns items with transcript data
+          // Format may vary, but typically has transcript or captions array
+          const transcriptItem = items[0]
+          
+          // Handle different possible response formats
+          let transcriptSegments: any[] = []
+          
+          if (transcriptItem.transcript && Array.isArray(transcriptItem.transcript)) {
+            transcriptSegments = transcriptItem.transcript
+            console.log('Using transcript array, length:', transcriptSegments.length)
+          } else if (transcriptItem.captions && Array.isArray(transcriptItem.captions)) {
+            transcriptSegments = transcriptItem.captions
+            console.log('Using captions array, length:', transcriptSegments.length)
+          } else if (transcriptItem.text) {
+            // Single text block, create one segment
+            transcriptSegments = [{
+              text: transcriptItem.text,
+              start: 0,
+              end: transcriptItem.duration || 0,
+            }]
+            console.log('Using single text block')
+          } else if (Array.isArray(transcriptItem)) {
+            transcriptSegments = transcriptItem
+            console.log('Item is array, length:', transcriptSegments.length)
+          } else {
+            // Try to find any array property
+            const arrayKeys = Object.keys(transcriptItem).filter(key => Array.isArray(transcriptItem[key]))
+            if (arrayKeys.length > 0) {
+              console.log('Found array properties:', arrayKeys)
+              transcriptSegments = transcriptItem[arrayKeys[0]]
+            } else {
+              // Last resort: check if item has timestamped entries
+              console.log('Checking for timestamped entries in item keys:', Object.keys(transcriptItem))
+            }
+          }
+          
+          if (transcriptSegments.length > 0) {
+            console.log('✅ Successfully fetched YouTube transcript via Apify, segments:', transcriptSegments.length)
+            console.log('Sample segment:', JSON.stringify(transcriptSegments[0], null, 2))
+            useTranscriptAPI = true
+            
+            // Convert to our format
+            transcriptText = transcriptSegments.map((item: any) => item.text || item).join(' ')
+            segments = transcriptSegments.map((item: any) => {
+              // Handle different timestamp formats
+              const start = item.start || item.startTime || item.offset || item.time || 0
+              const duration = item.dur || item.duration || item.endTime || 0
+              const end = item.end || item.endTime || (start + duration)
+              const text = item.text || item.content || item.transcript || String(item)
+              
+              // Convert milliseconds to seconds if needed
+              const startSeconds = typeof start === 'number' ? (start > 1000 ? start / 1000 : start) : parseFloat(start) || 0
+              const endSeconds = typeof end === 'number' ? (end > 1000 ? end / 1000 : end) : (typeof duration === 'number' ? (duration > 1000 ? duration / 1000 : duration) : parseFloat(duration) || 0)
+              const finalEnd = endSeconds > startSeconds ? endSeconds : (startSeconds + (typeof duration === 'number' ? (duration > 1000 ? duration / 1000 : duration) : parseFloat(duration) || 0))
+              
+              return {
+                text: text.trim(),
+                start: startSeconds,
+                end: finalEnd,
+              }
+            }).filter((seg: any) => seg.text && seg.text.trim().length > 0)
+            
+            console.log('Converted segments count:', segments.length)
+            console.log('Sample converted segment:', segments[0])
+            
+            if (segments.length === 0) {
+              throw new Error('Apify returned data but no valid segments found')
+            }
+          } else {
+            transcriptErrors.push('Apify returned empty transcript data')
+            console.error('No transcript segments found in Apify response')
+          }
+        } else {
+          transcriptErrors.push('Apify returned no items')
+          console.error('Apify returned no items')
+        }
+      } catch (apifyError: any) {
+        const errorMsg = apifyError.message || 'Unknown error'
+        console.warn('❌ Apify method failed:', errorMsg)
+        transcriptErrors.push(`Apify: ${errorMsg}`)
+        // Continue to fallback methods
+      }
+    } else if (!useTranscriptAPI && !process.env.APIFY_API_TOKEN) {
+      console.log('⚠️ Apify API token not configured, skipping Apify method')
+      console.log('   To use Apify: Get token from https://console.apify.com/account/integrations and add APIFY_API_TOKEN to .env.local')
+      transcriptErrors.push('Apify API token not configured')
+    }
+    
+    // Method 3: Try youtube-transcript library (no API key needed, often most reliable)
     if (!useTranscriptAPI) {
       try {
-        console.log('📡 Method 2: Attempting to fetch YouTube transcript using unofficial method...')
+        console.log('📡 Method 3: Attempting to fetch YouTube transcript using youtube-transcript library...')
+        console.log('   Video ID:', youtubeId)
         
         // Try to fetch transcript - this will fail if video has no captions
         let transcriptData
         try {
           transcriptData = await YoutubeTranscript.fetchTranscript(youtubeId)
+          console.log('   Got transcript data:', transcriptData?.length || 0, 'segments')
         } catch (fetchError: any) {
           const errorMsg = fetchError.message?.toLowerCase() || ''
-          console.warn('Unofficial transcript fetch error:', fetchError.message)
+          console.warn('   youtube-transcript error:', fetchError.message)
           
           // Check if it's a "no captions" error
-          if (errorMsg.includes('transcript') || errorMsg.includes('caption') || errorMsg.includes('not available') || errorMsg.includes('could not retrieve')) {
+          if (errorMsg.includes('transcript') || errorMsg.includes('caption') || errorMsg.includes('not available') || errorMsg.includes('could not retrieve') || errorMsg.includes('no captions')) {
             const fullError = 'This video does not have captions/transcripts available. Please try a video with captions enabled, or download and upload the video file directly.'
             console.warn('❌', fullError)
-            transcriptErrors.push(`Unofficial method: ${fullError}`)
+            transcriptErrors.push(`youtube-transcript: ${fullError}`)
             throw new Error(fullError)
           }
           throw fetchError
         }
         
         if (transcriptData && transcriptData.length > 0) {
-          console.log('✅ Successfully fetched YouTube transcript via unofficial method, segments:', transcriptData.length)
+          console.log('✅ Successfully fetched YouTube transcript via youtube-transcript, segments:', transcriptData.length)
           useTranscriptAPI = true
           
           // Convert transcript data to our format
@@ -148,23 +267,97 @@ export async function transcribeVideo(videoId: string) {
               : item.offset / 1000 + (item.duration || 0) / 1000,
           }))
         } else {
-          transcriptErrors.push('Unofficial method returned empty data')
+          transcriptErrors.push('youtube-transcript returned empty data')
         }
       } catch (transcriptError: any) {
         const errorMsg = transcriptError.message || 'Unknown error'
-        console.warn('❌ Unofficial transcript method failed:', errorMsg)
-        transcriptErrors.push(`Unofficial method: ${errorMsg}`)
+        console.warn('❌ youtube-transcript method failed:', errorMsg)
+        transcriptErrors.push(`youtube-transcript: ${errorMsg}`)
+        // Continue to next fallback method
+      }
+    }
+    
+    // Method 4: Try youtube-captions-scraper (no API key needed, alternative method)
+    if (!useTranscriptAPI) {
+      try {
+        console.log('📡 Method 4: Attempting to fetch YouTube captions using youtube-captions-scraper...')
+        console.log('   Video ID:', youtubeId)
+        
+        // Try to fetch captions - this will fail if video has no captions
+        let captionsData: any[] | null = null
+        let lastError: any = null
+        
+        try {
+          captionsData = await getSubtitles({
+            videoID: youtubeId,
+            lang: 'en', // Try English first
+          })
+          console.log('   Got captions with lang=en:', captionsData?.length || 0, 'segments')
+        } catch (fetchError: any) {
+          lastError = fetchError
+          console.log('   English captions failed, trying auto-detect...')
+          
+          // Try without language specification (auto-detect)
+          try {
+            captionsData = await getSubtitles({
+              videoID: youtubeId,
+            })
+            console.log('   Got captions with auto-detect:', captionsData?.length || 0, 'segments')
+          } catch (retryError: any) {
+            lastError = retryError
+            const errorMsg = retryError.message?.toLowerCase() || ''
+            console.warn('   youtube-captions-scraper error:', retryError.message)
+            
+            // Check if it's a "no captions" error
+            if (errorMsg.includes('transcript') || errorMsg.includes('caption') || errorMsg.includes('not available') || errorMsg.includes('could not retrieve') || errorMsg.includes('no captions')) {
+              const fullError = 'This video does not have captions/transcripts available. Please try a video with captions enabled, or download and upload the video file directly.'
+              console.warn('❌', fullError)
+              transcriptErrors.push(`youtube-captions-scraper: ${fullError}`)
+              throw new Error(fullError)
+            }
+            throw retryError
+          }
+        }
+        
+        if (captionsData && captionsData.length > 0) {
+          console.log('✅ Successfully fetched YouTube captions via youtube-captions-scraper, segments:', captionsData.length)
+          useTranscriptAPI = true
+          
+          // Convert captions data to our format
+          // getSubtitles returns: { start: number, dur: number, text: string }
+          transcriptText = captionsData.map((item: any) => item.text).join(' ')
+          segments = captionsData.map((item: any) => ({
+            text: item.text,
+            start: item.start,
+            end: item.start + (item.dur || 0),
+          }))
+        } else {
+          const errorMsg = lastError?.message || 'Returned empty data'
+          console.warn('   youtube-captions-scraper returned empty or no data')
+          transcriptErrors.push(`youtube-captions-scraper: ${errorMsg}`)
+        }
+      } catch (scraperError: any) {
+        const errorMsg = scraperError.message || 'Unknown error'
+        console.warn('❌ youtube-captions-scraper failed:', errorMsg)
+        transcriptErrors.push(`youtube-captions-scraper: ${errorMsg}`)
         // Continue to audio download fallback
       }
     }
     
-    // If both transcript methods failed, provide a clear error before trying audio download
-    if (!useTranscriptAPI && transcriptErrors.length > 0) {
-      console.warn('⚠️ All transcript methods failed. Errors:', transcriptErrors)
+    // If all transcript methods failed, provide a clear error before trying audio download
+    if (!useTranscriptAPI) {
+      console.warn('⚠️ All transcript methods failed. Attempted methods:', transcriptErrors.length)
+      console.warn('Errors:', transcriptErrors)
       
       // Check if the errors indicate no captions are available
       const allErrors = transcriptErrors.join(' ').toLowerCase()
-      if (allErrors.includes('no captions') || allErrors.includes('not available') || allErrors.includes('could not retrieve')) {
+      const hasNoCaptionsError = allErrors.includes('no captions') || 
+                                 allErrors.includes('not available') || 
+                                 allErrors.includes('could not retrieve') ||
+                                 allErrors.includes('does not have captions')
+      
+      if (hasNoCaptionsError || transcriptErrors.length >= 2) {
+        // If multiple methods failed or we have clear "no captions" errors, don't try audio download
         await serviceClient
           .from('videos')
           .update({ status: 'error' })
@@ -178,8 +371,14 @@ export async function transcribeVideo(videoId: string) {
         
         errorMessage += 'Please try a video with captions enabled (look for the CC button on YouTube), or download and upload the video file directly.'
         
+        // Clean up player scripts before throwing
+        cleanupPlayerScripts()
+        
         throw new Error(errorMessage)
       }
+      
+      // If we only have 1 error or unclear errors, log but continue to audio download
+      console.log('⚠️ Transcript methods failed, but attempting audio download as last resort...')
     }
     
     // If we successfully got transcripts from either method, store them
@@ -231,98 +430,98 @@ export async function transcribeVideo(videoId: string) {
     
     // Fall back to downloading audio if transcript API didn't work
     if (!useTranscriptAPI) {
+    try {
+      // Validate YouTube URL
+      if (!ytdl.validateURL(video.youtube_url)) {
+        throw new Error('Invalid YouTube URL')
+      }
+
+      // Get video info
+      const info = await ytdl.getInfo(video.youtube_url)
+      console.log('YouTube video info retrieved:', info.videoDetails.title)
+
+      // Download audio stream with retry and better options
+      let audioStream
       try {
-        // Validate YouTube URL
-        if (!ytdl.validateURL(video.youtube_url)) {
-          throw new Error('Invalid YouTube URL')
-        }
-
-        // Get video info
-        const info = await ytdl.getInfo(video.youtube_url)
-        console.log('YouTube video info retrieved:', info.videoDetails.title)
-
-        // Download audio stream with retry and better options
-        let audioStream
-        try {
-          audioStream = ytdl(video.youtube_url, {
-            quality: 'highestaudio',
-            filter: 'audioonly',
-            requestOptions: {
-              headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-              },
+        audioStream = ytdl(video.youtube_url, {
+          quality: 'highestaudio',
+          filter: 'audioonly',
+          requestOptions: {
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
             },
-          })
-        } catch (streamInitError: any) {
-          console.error('Failed to initialize stream:', streamInitError)
-          throw new Error(`Failed to initialize YouTube stream: ${streamInitError.message || 'Unknown error'}`)
-        }
+          },
+        })
+      } catch (streamInitError: any) {
+        console.error('Failed to initialize stream:', streamInitError)
+        throw new Error(`Failed to initialize YouTube stream: ${streamInitError.message || 'Unknown error'}`)
+      }
 
-        // Convert stream to buffer with error handling
-        const chunks: Buffer[] = []
-        try {
-          for await (const chunk of audioStream) {
-            chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
-          }
-          audioBuffer = Buffer.concat(chunks)
-          
-          if (audioBuffer.length === 0) {
-            throw new Error('Downloaded audio buffer is empty')
-          }
-        } catch (streamError: any) {
-          console.error('Stream error:', streamError)
-          
-          // Check for specific error types
-          if (streamError.statusCode === 403 || streamError.message?.includes('403')) {
-            throw new Error(
-              'YouTube is blocking the download (403 Forbidden). ' +
+      // Convert stream to buffer with error handling
+      const chunks: Buffer[] = []
+      try {
+        for await (const chunk of audioStream) {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk))
+        }
+        audioBuffer = Buffer.concat(chunks)
+        
+        if (audioBuffer.length === 0) {
+          throw new Error('Downloaded audio buffer is empty')
+        }
+      } catch (streamError: any) {
+        console.error('Stream error:', streamError)
+        
+        // Check for specific error types
+        if (streamError.statusCode === 403 || streamError.message?.includes('403')) {
+          throw new Error(
+            'YouTube is blocking the download (403 Forbidden). ' +
               'This video may not have captions available. Please try a video with captions enabled, or download and upload the video file directly.'
-            )
-          }
-          
-          throw new Error(`Failed to download audio stream: ${streamError.message || 'Unknown error'}`)
+          )
         }
+        
+        throw new Error(`Failed to download audio stream: ${streamError.message || 'Unknown error'}`)
+      }
 
-        console.log('YouTube audio downloaded, size:', audioBuffer.length, 'bytes')
+      console.log('YouTube audio downloaded, size:', audioBuffer.length, 'bytes')
 
-        // Update video duration if available
-        if (info.videoDetails.lengthSeconds) {
-          await serviceClient
-            .from('videos')
-            .update({ duration: parseInt(info.videoDetails.lengthSeconds) })
-            .eq('id', videoId)
-        }
-      } catch (youtubeError: any) {
-        console.error('YouTube download error:', youtubeError)
-        
-        // Provide more helpful error messages based on error type
-        let errorMessage = 'Failed to process YouTube video'
-        const errorMsg = youtubeError.message || ''
-        const errorStr = errorMsg.toLowerCase()
-        
-        if (youtubeError.statusCode === 403 || errorStr.includes('403') || errorStr.includes('forbidden')) {
-          errorMessage = 'YouTube is blocking the download (403 Forbidden). This video does not have captions available, and YouTube is blocking audio downloads. Please try a video with captions enabled, or download and upload the video file directly.'
-        } else if (errorStr.includes('could not extract') || errorStr.includes('extract functions') || errorStr.includes('decipher') || errorStr.includes('parse')) {
-          errorMessage = 'YouTube has updated their player code. The download library cannot parse the new format. Please try a video with captions enabled, or download the video file and upload it directly for transcription.'
-        } else if (errorStr.includes('private') || errorStr.includes('unavailable')) {
-          errorMessage = 'This YouTube video is private, age-restricted, or unavailable. Please use a public video with captions enabled, or upload the video file directly.'
-        } else if (errorStr.includes('region') || errorStr.includes('country')) {
-          errorMessage = 'This YouTube video is not available in your region. Please upload the video file directly instead.'
-        } else if (errorStr.includes('transcript') || errorStr.includes('caption')) {
-          errorMessage = 'This video does not have captions/transcripts available. Please try a video with captions enabled, or download and upload the video file directly.'
-        } else {
-          errorMessage = `Failed to process YouTube video: ${errorMsg || 'Unknown error'}. Please try a video with captions enabled, or download the video and upload the file directly.`
-        }
-        
+      // Update video duration if available
+      if (info.videoDetails.lengthSeconds) {
         await serviceClient
           .from('videos')
-          .update({ status: 'error' })
+          .update({ duration: parseInt(info.videoDetails.lengthSeconds) })
           .eq('id', videoId)
+      }
+    } catch (youtubeError: any) {
+      console.error('YouTube download error:', youtubeError)
+      
+      // Provide more helpful error messages based on error type
+        let errorMessage = 'Failed to process YouTube video'
+      const errorMsg = youtubeError.message || ''
+      const errorStr = errorMsg.toLowerCase()
+      
+      if (youtubeError.statusCode === 403 || errorStr.includes('403') || errorStr.includes('forbidden')) {
+          errorMessage = 'YouTube is blocking the download (403 Forbidden). This video does not have captions available, and YouTube is blocking audio downloads. Please try a video with captions enabled, or download and upload the video file directly.'
+      } else if (errorStr.includes('could not extract') || errorStr.includes('extract functions') || errorStr.includes('decipher') || errorStr.includes('parse')) {
+          errorMessage = 'YouTube has updated their player code. The download library cannot parse the new format. Please try a video with captions enabled, or download the video file and upload it directly for transcription.'
+      } else if (errorStr.includes('private') || errorStr.includes('unavailable')) {
+          errorMessage = 'This YouTube video is private, age-restricted, or unavailable. Please use a public video with captions enabled, or upload the video file directly.'
+      } else if (errorStr.includes('region') || errorStr.includes('country')) {
+        errorMessage = 'This YouTube video is not available in your region. Please upload the video file directly instead.'
+        } else if (errorStr.includes('transcript') || errorStr.includes('caption')) {
+          errorMessage = 'This video does not have captions/transcripts available. Please try a video with captions enabled, or download and upload the video file directly.'
+      } else {
+          errorMessage = `Failed to process YouTube video: ${errorMsg || 'Unknown error'}. Please try a video with captions enabled, or download the video and upload the file directly.`
+      }
+      
+      await serviceClient
+        .from('videos')
+        .update({ status: 'error' })
+        .eq('id', videoId)
         
         // Clean up player scripts even on error
         cleanupPlayerScripts()
         
-        throw new Error(errorMessage)
+      throw new Error(errorMessage)
       }
     }
   } else if (video.video_url) {
