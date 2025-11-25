@@ -1,0 +1,60 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "PublicReadGetObject",
+      "Effect": "Allow",
+      "Principal": "*",
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::summaryr/*"
+    },
+    {
+      "Sid": "AllowedActionsForAdmin",
+      "Effect": "Allow",
+      "Principal": {
+        "AWS": "arn:aws:iam::175314215730:user/summaryr"
+      },
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject",
+        "s3:ListBucket",
+        "s3:PutObjectAcl"
+      ],
+      "Resource": [
+        "arn:aws:s3:::summaryr",
+        "arn:aws:s3:::summaryr/*"
+      ]
+    },
+    {
+      "Sid": "DenyNonSecureTransport",
+      "Effect": "Deny",
+      "Principal": "*",
+      "Action": "s3:*",
+      "Resource": [
+        "arn:aws:s3:::summaryr",
+        "arn:aws:s3:::summaryr/*"
+      ],
+      "Condition": {
+        "Bool": {
+          "aws:SecureTransport": "false"
+        }
+      }
+    },
+    {
+      "Sid": "AllowCloudFrontServicePrincipal",
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "cloudfront.amazonaws.com"
+      },
+      "Action": "s3:GetObject",
+      "Resource": "arn:aws:s3:::summaryr/*",
+      "Condition": {
+        "StringEquals": {
+          "AWS:SourceArn": "arn:aws:cloudfront::175314215730:distribution/E1CG4YCVIR1115"
+        }
+      }
+    }
+  ]
+}
+

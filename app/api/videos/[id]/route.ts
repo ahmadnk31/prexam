@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/supabase/server'
 import { createServiceClient } from '@/supabase/service'
+import { extractS3KeyFromUrl, deleteFromS3 } from '@/lib/s3'
 
 export async function DELETE(
   req: NextRequest,
@@ -34,21 +35,16 @@ export async function DELETE(
       )
     }
 
-    // Delete video file from storage if it exists
+    // Delete video file from S3 if it exists
     if (video.video_url) {
       try {
-        // Extract file path from URL
-        // Format: https://...supabase.co/storage/v1/object/public/videos/{path}
-        const urlParts = video.video_url.split('/videos/')
-        if (urlParts.length > 1) {
-          const filePath = urlParts[1]
-          await serviceClient.storage
-            .from('videos')
-            .remove([filePath])
+        const s3Key = extractS3KeyFromUrl(video.video_url)
+        if (s3Key) {
+          await deleteFromS3('videos', s3Key)
         }
       } catch (storageError) {
         // Log but don't fail if storage deletion fails
-        console.error('Error deleting video file from storage:', storageError)
+        console.error('Error deleting video file from S3:', storageError)
       }
     }
 

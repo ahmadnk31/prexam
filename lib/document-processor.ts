@@ -89,13 +89,27 @@ export async function processDocument(documentId: string) {
       throw new Error('Document file URL not found')
     }
 
-    // Download file
-    const fileResponse = await fetch(document.file_url)
-    if (!fileResponse.ok) {
-      throw new Error('Failed to download document file')
+    // Download file from S3
+    const { extractS3KeyFromUrl, downloadFromS3 } = await import('@/lib/s3')
+    
+    let fileBuffer: Buffer
+    try {
+      const s3Key = extractS3KeyFromUrl(document.file_url)
+      
+      if (!s3Key) {
+        // Fallback to HTTP fetch if URL is not S3/CloudFront (for backwards compatibility)
+        const fileResponse = await fetch(document.file_url)
+        if (!fileResponse.ok) {
+          throw new Error('Failed to download document file')
+        }
+        fileBuffer = Buffer.from(await fileResponse.arrayBuffer())
+      } else {
+        fileBuffer = await downloadFromS3('documents', s3Key)
+      }
+    } catch (downloadError: any) {
+      console.error('Document download error:', downloadError)
+      throw new Error(`Failed to download document: ${downloadError.message || 'Unknown error'}`)
     }
-
-    const fileBuffer = Buffer.from(await fileResponse.arrayBuffer())
 
     // Extract text based on file type
     let extractedText = ''

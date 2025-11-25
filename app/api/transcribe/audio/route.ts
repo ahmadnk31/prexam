@@ -50,19 +50,17 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Upload audio to Supabase Storage
-    const audioBuffer = Buffer.from(await audioFile.arrayBuffer())
+    // Upload audio to S3
+    const { uploadToS3, getPublicUrl } = await import('@/lib/s3')
     const fileName = `${video.id}_audio.${audioFile.name.split('.').pop() || 'webm'}`
     
-    const { error: uploadError } = await serviceClient.storage
-      .from('videos')
-      .upload(fileName, audioBuffer, {
-        contentType: audioFile.type,
-        upsert: false,
-      })
-
-    if (uploadError) {
-      console.error('Error uploading audio:', uploadError)
+    let publicUrl: string
+    try {
+      const audioBuffer = Buffer.from(await audioFile.arrayBuffer())
+      const s3Key = await uploadToS3('videos', user.id, fileName, audioBuffer, audioFile.type)
+      publicUrl = getPublicUrl('videos', s3Key)
+    } catch (uploadError: any) {
+      console.error('Error uploading audio to S3:', uploadError)
       await serviceClient
         .from('videos')
         .update({ status: 'error' })
@@ -73,15 +71,11 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Get public URL
-    const {
-      data: { publicUrl },
-    } = serviceClient.storage.from('videos').getPublicUrl(fileName)
-
     // Update video with audio URL
     await serviceClient
       .from('videos')
       .update({ video_url: publicUrl })
+      .eq('id', video.id)
       .eq('id', video.id)
 
     // Transcribe with Whisper

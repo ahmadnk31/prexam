@@ -525,58 +525,33 @@ export async function transcribeVideo(videoId: string) {
       }
     }
   } else if (video.video_url) {
-    // Download video from Supabase Storage
-    let filePath: string
+    // Download video from S3
+    const { extractS3KeyFromUrl, downloadFromS3 } = await import('@/lib/s3')
     
-    if (video.video_url.includes('/storage/v1/object/public/videos/')) {
-      const urlParts = video.video_url.split('/storage/v1/object/public/videos/')
-      filePath = urlParts[1] || ''
-    } else if (video.video_url.includes('/storage/v1/object/authenticated/videos/')) {
-      const urlParts = video.video_url.split('/storage/v1/object/authenticated/videos/')
-      filePath = urlParts[1] || ''
-    } else {
-      const urlParts = video.video_url.split('/')
-      const videosIndex = urlParts.findIndex((part: string) => part === 'videos')
-      if (videosIndex >= 0) {
-        filePath = urlParts.slice(videosIndex + 1).join('/')
-      } else {
-        filePath = urlParts[urlParts.length - 1]
-      }
-    }
-
-    if (!filePath) {
+    const s3Key = extractS3KeyFromUrl(video.video_url)
+    
+    if (!s3Key) {
       await serviceClient
         .from('videos')
         .update({ status: 'error' })
         .eq('id', videoId)
-      throw new Error('Could not extract file path from video URL')
+      throw new Error('Could not extract S3 key from video URL')
     }
-    
-    const { data, error: downloadError } = await serviceClient.storage
-      .from('videos')
-      .download(filePath)
 
-    if (downloadError) {
-      console.error('Download error:', downloadError)
-      console.error('File path attempted:', filePath)
+    let arrayBuffer: ArrayBuffer
+    try {
+      const fileBuffer = await downloadFromS3('videos', s3Key)
+      arrayBuffer = fileBuffer.buffer
+    } catch (downloadError: any) {
+      console.error('S3 download error:', downloadError)
+      console.error('S3 key attempted:', s3Key)
       console.error('Video URL:', video.video_url)
       await serviceClient
         .from('videos')
         .update({ status: 'error' })
         .eq('id', videoId)
-      throw new Error(`Failed to download video from storage: ${downloadError.message || 'Unknown error'}`)
+      throw new Error(`Failed to download video from S3: ${downloadError.message || 'Unknown error'}`)
     }
-
-    if (!data) {
-      console.error('No data returned from storage download')
-      await serviceClient
-        .from('videos')
-        .update({ status: 'error' })
-        .eq('id', videoId)
-      throw new Error('No data returned from storage download')
-    }
-
-    const arrayBuffer = await data.arrayBuffer()
     audioBuffer = Buffer.from(arrayBuffer)
   } else {
     await serviceClient
@@ -586,30 +561,69 @@ export async function transcribeVideo(videoId: string) {
     throw new Error('No video file or URL found')
   }
 
+  // Check file size (OpenAI Whisper has a 25MB limit)
+  const MAX_FILE_SIZE = 25 * 1024 * 1024 // 25MB in bytes
+  if (audioBuffer.length > MAX_FILE_SIZE) {
+    await serviceClient
+      .from('videos')
+      .update({ status: 'error' })
+      .eq('id', videoId)
+    throw new Error(`File is too large (${(audioBuffer.length / 1024 / 1024).toFixed(2)}MB). OpenAI Whisper API has a 25MB limit. Please use a smaller file or extract audio first.`)
+  }
+
   // Transcribe with Whisper
   const uint8Array = new Uint8Array(audioBuffer)
   
+  // Detect file format more accurately
   let mimeType = 'audio/mpeg'
-  if (audioBuffer.length > 4) {
-    const header = audioBuffer.subarray(0, 4)
-    if (header[0] === 0xff && header[1] === 0xfb) {
-      mimeType = 'audio/mpeg'
-    } else if (header[0] === 0x52 && header[1] === 0x49 && header[2] === 0x46 && header[3] === 0x46) {
-      mimeType = 'audio/wav'
-    } else if (header[0] === 0x1a && header[1] === 0x45 && header[2] === 0xdf && header[3] === 0xa3) {
-      mimeType = 'video/webm'
-    } else if (header[0] === 0x00 && header[1] === 0x00 && header[2] === 0x00) {
+  let fileExtension = 'mp3'
+  
+  if (audioBuffer.length > 12) {
+    // Check for MP4 (ftyp box at offset 4)
+    if (audioBuffer[4] === 0x66 && audioBuffer[5] === 0x74 && audioBuffer[6] === 0x79 && audioBuffer[7] === 0x70) {
       mimeType = 'video/mp4'
+      fileExtension = 'mp4'
+    }
+    // Check for WebM
+    else if (audioBuffer[0] === 0x1a && audioBuffer[1] === 0x45 && audioBuffer[2] === 0xdf && audioBuffer[3] === 0xa3) {
+      mimeType = 'video/webm'
+      fileExtension = 'webm'
+    }
+    // Check for MP3 (ID3v2 or MPEG header)
+    else if ((audioBuffer[0] === 0xff && (audioBuffer[1] & 0xe0) === 0xe0) || 
+             (audioBuffer[0] === 0x49 && audioBuffer[1] === 0x44 && audioBuffer[2] === 0x33)) {
+      mimeType = 'audio/mpeg'
+      fileExtension = 'mp3'
+    }
+    // Check for WAV (RIFF header)
+    else if (audioBuffer[0] === 0x52 && audioBuffer[1] === 0x49 && audioBuffer[2] === 0x46 && audioBuffer[3] === 0x46) {
+      mimeType = 'audio/wav'
+      fileExtension = 'wav'
+    }
+    // Check for M4A (MP4 container)
+    else if (audioBuffer[4] === 0x66 && audioBuffer[5] === 0x74 && audioBuffer[6] === 0x79 && audioBuffer[7] === 0x70) {
+      mimeType = 'audio/mp4'
+      fileExtension = 'm4a'
     }
   }
   
   const blob = new Blob([uint8Array], { type: mimeType })
-  const fileName = video.video_url?.split('/').pop() || 'audio.mp3'
+  const fileName = video.video_url?.split('/').pop() || `audio.${fileExtension}`
   const file = new File([blob], fileName, { type: mimeType })
   
   console.log('Sending to OpenAI Whisper API...')
-  console.log('File size:', file.size, 'bytes')
+  console.log('File size:', file.size, 'bytes', `(${(file.size / 1024 / 1024).toFixed(2)}MB)`)
   console.log('File type:', mimeType)
+  console.log('File name:', fileName)
+  
+  // Validate file before sending
+  if (file.size === 0) {
+    await serviceClient
+      .from('videos')
+      .update({ status: 'error' })
+      .eq('id', videoId)
+    throw new Error('File is empty. Cannot transcribe.')
+  }
   
   let transcription
   try {
@@ -622,11 +636,42 @@ export async function transcribeVideo(videoId: string) {
     console.log('Transcription successful, text length:', transcription.text?.length || 0)
   } catch (openaiError: any) {
     console.error('OpenAI API error:', openaiError)
+    console.error('Error details:', {
+      status: openaiError.status,
+      message: openaiError.message,
+      code: openaiError.code,
+      type: openaiError.type,
+      fileSize: file.size,
+      fileType: mimeType,
+      fileName: fileName,
+    })
+    
     await serviceClient
       .from('videos')
       .update({ status: 'error' })
       .eq('id', videoId)
-    throw new Error(`OpenAI transcription failed: ${openaiError.message || 'Unknown error'}. Check your API key and credits.`)
+    
+    // Provide more specific error messages
+    let errorMessage = 'OpenAI transcription failed'
+    if (openaiError.status === 400) {
+      if (openaiError.message?.includes('file') || openaiError.message?.includes('format')) {
+        errorMessage = `File format error: ${openaiError.message}. The file might be corrupted or in an unsupported format. Supported formats: mp3, mp4, mpeg, mpga, m4a, wav, webm.`
+      } else if (openaiError.message?.includes('size') || file.size > MAX_FILE_SIZE) {
+        errorMessage = `File too large (${(file.size / 1024 / 1024).toFixed(2)}MB). OpenAI Whisper API has a 25MB limit. Please use a smaller file.`
+      } else {
+        errorMessage = `Invalid request: ${openaiError.message}. Check that the file is a valid audio/video file.`
+      }
+    } else if (openaiError.status === 401) {
+      errorMessage = 'OpenAI API key is invalid or expired. Check your OPENAI_API_KEY environment variable.'
+    } else if (openaiError.status === 429) {
+      errorMessage = 'OpenAI API rate limit exceeded. Please try again later.'
+    } else if (openaiError.status === 500 || openaiError.status === 503) {
+      errorMessage = 'OpenAI API is temporarily unavailable. Please try again later.'
+    } else {
+      errorMessage = `${openaiError.message || 'Unknown error'}. Check your API key and credits.`
+    }
+    
+    throw new Error(errorMessage)
   }
 
   const transcriptText = transcription.text || ''

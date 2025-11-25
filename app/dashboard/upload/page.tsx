@@ -71,32 +71,187 @@ export default function UploadPage() {
     setProgress(0)
 
     try {
-      // Handle file upload or YouTube URL
-      const formData = new FormData()
-      if (uploadMethod === 'file' && file) {
-        formData.append('file', file)
-      } else if (uploadMethod === 'youtube' && youtubeUrl) {
+      // For YouTube URLs, use the simple upload flow
+      if (uploadMethod === 'youtube' && youtubeUrl) {
+        const formData = new FormData()
         formData.append('youtubeUrl', youtubeUrl.trim())
-      }
-      if (title) {
-        formData.append('title', title)
+        if (title) {
+          formData.append('title', title)
+        }
+
+        const response = await fetch('/api/upload', {
+          method: 'POST',
+          body: formData,
+        })
+
+        if (!response.ok) {
+          const error = await response.json()
+          throw new Error(error.error || error.message || 'Upload failed')
+        }
+
+        const { videoId } = await response.json()
+        router.push(`/dashboard/videos/${videoId}`)
+        return
       }
 
-      const response = await fetch('/api/upload', {
-        method: 'POST',
-        body: formData,
-      })
+      // For file uploads, use presigned URL for large files (always use for better reliability)
+      if (uploadMethod === 'file' && file) {
+        // Step 1: Create video record
+        const createResponse = await fetch('/api/upload', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            title: title || file.name,
+            fileSize: file.size,
+            fileName: file.name,
+            // Signal that we'll use presigned URL
+            usePresignedUrl: true,
+          }),
+        })
 
-      if (!response.ok) {
-        const error = await response.json()
-        throw new Error(error.error || error.message || 'Upload failed')
+        if (!createResponse.ok) {
+          const error = await createResponse.json()
+          throw new Error(error.error || error.message || 'Failed to create video record')
+        }
+
+        const { videoId } = await createResponse.json()
+
+        // Step 2: Get presigned URL
+        const fileExt = file.name.split('.').pop() || 'mp4'
+        const fileName = `${videoId}.${fileExt}`
+
+        const presignedResponse = await fetch('/api/upload/presigned', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            videoId,
+            fileName,
+            fileType: 'videos',
+            contentType: file.type || 'video/mp4',
+          }),
+        })
+
+        if (!presignedResponse.ok) {
+          const error = await presignedResponse.json()
+          throw new Error(error.error || error.message || 'Failed to get upload URL')
+        }
+
+        const { presignedUrl, key } = await presignedResponse.json()
+
+        // Step 3: Upload directly to S3 using XMLHttpRequest (for progress tracking)
+        console.log('Starting S3 upload:', {
+          fileName: file.name,
+          fileSize: `${(file.size / 1024 / 1024).toFixed(2)} MB`,
+          contentType: file.type,
+        })
+
+        try {
+          // Upload to S3 using XMLHttpRequest to track upload progress
+          await new Promise<void>((resolve, reject) => {
+            const xhr = new XMLHttpRequest()
+
+            // Track upload progress
+            xhr.upload.addEventListener('progress', (e) => {
+              if (e.lengthComputable) {
+                const percentComplete = Math.round((e.loaded / e.total) * 100)
+                setProgress(percentComplete)
+                console.log(`Upload progress: ${percentComplete}%`)
+              }
+            })
+
+            // Handle completion
+            xhr.addEventListener('load', () => {
+              if (xhr.status >= 200 && xhr.status < 300) {
+                console.log('S3 upload successful, finalizing...')
+                setProgress(100)
+                resolve()
+              } else {
+                let errorText = ''
+                try {
+                  errorText = xhr.responseText || xhr.statusText
+                } catch (e) {
+                  errorText = xhr.statusText || 'Unknown error'
+                }
+                
+                console.error('S3 upload failed:', {
+                  status: xhr.status,
+                  statusText: xhr.statusText,
+                  response: errorText.substring(0, 500),
+                  presignedUrlPreview: presignedUrl.substring(0, 200) + '...',
+                })
+                
+                // Provide helpful error message based on status code
+                if (xhr.status === 400) {
+                  const errorDetails = errorText.includes('CORS') 
+                    ? 'CORS is not configured on your S3 bucket. See TROUBLESHOOTING_UPLOAD.md'
+                    : errorText.includes('ACL') 
+                    ? 'ACLs are disabled but required. Enable ACLs or update bucket policy. See TROUBLESHOOTING_UPLOAD.md'
+                    : 'S3 rejected the request. Check: 1) CORS configuration, 2) Bucket policy allows PUT, 3) Object ownership settings. See TROUBLESHOOTING_UPLOAD.md'
+                  
+                  reject(new Error(`Upload failed (400): ${errorDetails}\n\nS3 Response: ${errorText.substring(0, 300)}`))
+                } else if (xhr.status === 403) {
+                  reject(new Error('S3 access denied (403). Check:\n1. Your AWS credentials are correct\n2. IAM user has s3:PutObject permission\n3. Bucket policy allows PUT requests\n\nSee TROUBLESHOOTING_UPLOAD.md'))
+                } else if (xhr.status === 0) {
+                  reject(new Error('Network error. This usually means:\n1. CORS is not configured (most common)\n2. Network connectivity issue\n3. Browser blocked the request\n\nSee TROUBLESHOOTING_UPLOAD.md for CORS setup'))
+                } else {
+                  reject(new Error(`Upload failed with status ${xhr.status}: ${errorText.substring(0, 200)}`))
+                }
+              }
+            })
+
+            // Handle errors
+            xhr.addEventListener('error', () => {
+              reject(new Error('Network error during upload. Please check your connection and CORS configuration.'))
+            })
+
+            xhr.addEventListener('abort', () => {
+              reject(new Error('Upload was cancelled'))
+            })
+
+            // Start the upload
+            xhr.open('PUT', presignedUrl)
+            xhr.setRequestHeader('Content-Type', file.type || 'video/mp4')
+            // Don't set any other headers - presigned URL handles auth
+            xhr.send(file)
+          })
+
+          // Step 4: Finalize upload
+          const finalizeResponse = await fetch('/api/upload/finalize', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              videoId,
+              s3Key: key,
+            }),
+          })
+
+          if (!finalizeResponse.ok) {
+            const error = await finalizeResponse.json()
+            throw new Error(error.error || error.message || 'Failed to finalize upload')
+          }
+
+          router.push(`/dashboard/videos/${videoId}`)
+        } catch (error: any) {
+          console.error('Upload error:', error)
+          
+          // Provide more helpful error messages
+          if (error.message?.includes('Failed to fetch') || error.message?.includes('NetworkError')) {
+            throw new Error('Network error. Please check:\n1. Your internet connection\n2. CORS is configured on your S3 bucket (see AWS_SETUP.md)\n3. The bucket allows PUT requests from your domain')
+          }
+          
+          throw error
+        }
       }
-
-      const { videoId } = await response.json()
-      router.push(`/dashboard/videos/${videoId}`)
     } catch (error: any) {
       alert(error.message || 'Upload failed. Please try again.')
       setUploading(false)
+      setProgress(0)
     }
   }
 
@@ -261,8 +416,18 @@ export default function UploadPage() {
 
             {uploading && (
               <div className="space-y-2">
-                <Progress value={progress} />
-                <p className="text-sm text-gray-600">Uploading...</p>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-sm font-medium text-gray-700">Uploading...</p>
+                  <p className="text-sm font-semibold text-[#4B3F72]">{progress}%</p>
+                </div>
+                <Progress value={progress} className="h-2" />
+                <p className="text-xs text-gray-500">
+                  {file && progress > 0 && progress < 100
+                    ? `${((file.size * progress) / 100 / 1024 / 1024).toFixed(2)} MB of ${(file.size / 1024 / 1024).toFixed(2)} MB`
+                    : progress === 100
+                    ? 'Upload complete! Finalizing...'
+                    : 'Preparing upload...'}
+                </p>
               </div>
             )}
 

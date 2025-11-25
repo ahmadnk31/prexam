@@ -2,6 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createServiceClient } from '@/supabase/service'
 import { createClient } from '@/supabase/server'
 import { transcribeVideo } from '@/lib/transcribe'
+import { uploadToS3, getPublicUrl } from '@/lib/s3'
+
+// Configure for large file uploads
+export const runtime = 'nodejs'
+export const maxDuration = 300 // 5 minutes for large uploads
 
 export async function POST(req: NextRequest) {
   try {
@@ -14,8 +19,71 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const formData = await req.formData()
-    const file = formData.get('file') as File
+    // Check content type to determine how to parse the request
+    const contentType = req.headers.get('content-type') || ''
+    
+    // Handle JSON requests (for presigned URL flow)
+    if (contentType.includes('application/json')) {
+      const body = await req.json()
+      const { title, fileSize, fileName, usePresignedUrl } = body
+
+      if (usePresignedUrl) {
+        // Create video record for presigned URL upload
+        const serviceClient = createServiceClient()
+        const { data: video, error: videoError } = await serviceClient
+          .from('videos')
+          .insert({
+            user_id: user.id,
+            title: title || fileName || 'Untitled Video',
+            status: 'uploading',
+            file_size: fileSize || null,
+          })
+          .select()
+          .single()
+
+        if (videoError || !video) {
+          console.error('Error creating video:', videoError)
+          return NextResponse.json(
+            { error: 'Failed to create video record' },
+            { status: 500 }
+          )
+        }
+
+        return NextResponse.json({ videoId: video.id, video })
+      }
+    }
+
+    // Handle FormData requests (for YouTube URLs or small files)
+    let formData: FormData
+    try {
+      formData = await req.formData()
+    } catch (error: any) {
+      console.error('FormData parsing error:', error)
+      
+      // If it's a size issue, suggest using presigned URL upload
+      if (error.message?.includes('body') || error.message?.includes('size') || error.message?.includes('limit')) {
+        return NextResponse.json(
+          { 
+            error: 'File too large',
+            message: 'The file is too large to upload directly through the API route. Please use a smaller file or the upload will automatically use direct S3 upload.',
+            code: 'FILE_TOO_LARGE',
+            suggestion: 'Large files should use direct S3 uploads with presigned URLs.'
+          },
+          { status: 413 }
+        )
+      }
+      
+      return NextResponse.json(
+        { 
+          error: 'Failed to parse form data',
+          message: error.message || 'The request body could not be parsed as FormData.',
+          details: 'Make sure you are sending a proper multipart/form-data request with a file or YouTube URL.'
+        },
+        { status: 400 }
+      )
+    }
+    
+    const file = formData.get('file') as File | null
     const youtubeUrl = formData.get('youtubeUrl') as string | null
     const title = formData.get('title') as string | null
 
@@ -64,38 +132,28 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // If file upload, upload to Supabase Storage
+    // If file upload, upload to S3 (for small files only - large files use presigned URLs)
     if (file) {
-      const fileExt = file.name.split('.').pop()
-      const fileName = `${video.id}.${fileExt}`
-      const filePath = `${user.id}/${fileName}`
+      try {
+        const fileExt = file.name.split('.').pop()
+        const fileName = `${video.id}.${fileExt}`
 
-      const { error: uploadError } = await serviceClient.storage
-        .from('videos')
-        .upload(filePath, file, {
-          contentType: file.type,
-          upsert: false,
-        })
+        // Upload to S3
+        const s3Key = await uploadToS3('videos', user.id, fileName, file, file.type)
 
-      if (uploadError) {
-        console.error('Upload error:', uploadError)
-        
-        // Check if it's a bucket not found error
-        if (uploadError.message?.includes('Bucket not found') || uploadError.message?.includes('does not exist')) {
-          await serviceClient
-            .from('videos')
-            .update({ status: 'error' })
-            .eq('id', video.id)
-          
-          return NextResponse.json(
-            { 
-              error: 'Storage bucket not found',
-              message: 'The "videos" bucket does not exist in Supabase Storage. Please create it in your Supabase dashboard under Storage.',
-              details: 'See SUPABASE_SETUP.md for instructions'
-            },
-            { status: 500 }
-          )
-        }
+        // Get public URL (CloudFront or S3)
+        const publicUrl = getPublicUrl('videos', s3Key)
+
+        // Update video with URL
+        await serviceClient
+          .from('videos')
+          .update({
+            video_url: publicUrl,
+            status: 'processing',
+          })
+          .eq('id', video.id)
+      } catch (uploadError: any) {
+        console.error('S3 upload error:', uploadError)
         
         // Update video status to error
         await serviceClient
@@ -107,25 +165,11 @@ export async function POST(req: NextRequest) {
           { 
             error: 'Failed to upload file',
             message: uploadError.message || 'Unknown error',
-            details: uploadError
+            details: 'Check AWS credentials and S3 bucket configuration'
           },
           { status: 500 }
         )
       }
-
-      // Get public URL
-      const {
-        data: { publicUrl },
-      } = serviceClient.storage.from('videos').getPublicUrl(filePath)
-
-      // Update video with URL
-      await serviceClient
-        .from('videos')
-        .update({
-          video_url: publicUrl,
-          status: 'processing',
-        })
-        .eq('id', video.id)
     } else if (youtubeUrl) {
       // For YouTube URLs, mark as processing
       await serviceClient
@@ -160,4 +204,3 @@ export async function POST(req: NextRequest) {
     )
   }
 }
-

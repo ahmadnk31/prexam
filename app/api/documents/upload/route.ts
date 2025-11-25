@@ -1,6 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/supabase/server'
 import { createServiceClient } from '@/supabase/service'
+import { uploadToS3, getPublicUrl } from '@/lib/s3'
+
+// Configure for large file uploads
+export const runtime = 'nodejs'
+export const maxDuration = 300 // 5 minutes for large uploads
 
 export async function POST(req: NextRequest) {
   try {
@@ -13,7 +18,36 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const formData = await req.formData()
+    // Try to parse FormData - don't check content-type as browser sets it automatically
+    let formData: FormData
+    try {
+      formData = await req.formData()
+    } catch (error: any) {
+      console.error('FormData parsing error:', error)
+      console.error('Content-Type:', req.headers.get('content-type'))
+      console.error('Content-Length:', req.headers.get('content-length'))
+      
+      // If it's a size issue, suggest using presigned URL upload
+      if (error.message?.includes('body') || error.message?.includes('size')) {
+        return NextResponse.json(
+          { 
+            error: 'File too large',
+            message: 'The file is too large to upload directly. Please use a smaller file or contact support.',
+            code: 'FILE_TOO_LARGE'
+          },
+          { status: 413 }
+        )
+      }
+      
+      return NextResponse.json(
+        { 
+          error: 'Failed to parse form data',
+          message: error.message || 'The request body could not be parsed as FormData.',
+          details: 'Make sure you are sending a proper multipart/form-data request with a file.'
+        },
+        { status: 400 }
+      )
+    }
     const file = formData.get('file') as File
     const title = (formData.get('title') as string) || file?.name || 'Untitled Document'
 
@@ -54,35 +88,26 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Upload file to Supabase Storage
-    const fileName = `${document.id}.${fileExt}`
-    const filePath = `${user.id}/${fileName}`
+    // Upload file to S3
+    try {
+      const fileName = `${document.id}.${fileExt}`
 
-    const { error: uploadError } = await serviceClient.storage
-      .from('documents')
-      .upload(filePath, file, {
-        contentType: file.type,
-        upsert: false,
-      })
+      // Upload to S3
+      const s3Key = await uploadToS3('documents', user.id, fileName, file, file.type)
 
-    if (uploadError) {
-      console.error('Upload error:', uploadError)
-      
-      // Check if it's a bucket not found error
-      if (uploadError.message?.includes('Bucket not found') || uploadError.message?.includes('does not exist')) {
-        await serviceClient
-          .from('documents')
-          .update({ status: 'error' })
-          .eq('id', document.id)
-        
-        return NextResponse.json(
-          { 
-            error: 'Storage bucket not found',
-            message: 'The "documents" bucket does not exist in Supabase Storage. Please create it in your Supabase dashboard under Storage.',
-          },
-          { status: 500 }
-        )
-      }
+      // Get public URL (CloudFront or S3)
+      const publicUrl = getPublicUrl('documents', s3Key)
+
+      // Update document with URL and trigger processing
+      await serviceClient
+        .from('documents')
+        .update({
+          file_url: publicUrl,
+          status: 'processing',
+        })
+        .eq('id', document.id)
+    } catch (uploadError: any) {
+      console.error('S3 upload error:', uploadError)
       
       // Update document status to error
       await serviceClient
@@ -94,24 +119,11 @@ export async function POST(req: NextRequest) {
         { 
           error: 'Failed to upload file',
           message: uploadError.message || 'Unknown error',
+          details: 'Check AWS credentials and S3 bucket configuration'
         },
         { status: 500 }
       )
     }
-
-    // Get public URL
-    const {
-      data: { publicUrl },
-    } = serviceClient.storage.from('documents').getPublicUrl(filePath)
-
-    // Update document with URL and trigger processing
-    await serviceClient
-      .from('documents')
-      .update({
-        file_url: publicUrl,
-        status: 'processing',
-      })
-      .eq('id', document.id)
 
     // Trigger text extraction in background (don't wait)
     // Use dynamic import to avoid blocking the response
