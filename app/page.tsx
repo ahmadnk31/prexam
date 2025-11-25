@@ -4,13 +4,45 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import type { Metadata } from 'next'
 
+const baseMarketingUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://summaryr.com'
+
 export const metadata: Metadata = {
-  title: 'Home',
+  title: 'Summaryr | AI-Powered Study Platform',
   description: 'Transform videos and documents into flashcards and practice questions with AI. Study smarter with automated transcription, spaced repetition flashcards, and AI-generated quizzes.',
+  keywords: [
+    'summaryr',
+    'ai study tools',
+    'video notes',
+    'flashcard generator',
+    'ai tutor',
+    'study operating system',
+  ],
+  alternates: {
+    canonical: '/',
+    languages: {
+      'en-US': '/',
+    },
+  },
   openGraph: {
-    title: 'Summaryr - AI-Powered Study Platform',
+    title: 'Summaryr | AI-Powered Study Platform',
     description: 'Transform videos and documents into flashcards and practice questions with AI. Study smarter with automated transcription, spaced repetition flashcards, and AI-generated quizzes.',
     type: 'website',
+    url: baseMarketingUrl,
+    siteName: 'Summaryr',
+    images: [
+      {
+        url: `${baseMarketingUrl}/logo.png`,
+        width: 1302,
+        height: 367,
+        alt: 'Summaryr preview graphic',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Summaryr | AI-Powered Study Platform',
+    description: 'AI copilot for studying video and document content faster.',
+    images: [`${baseMarketingUrl}/logo.png`],
   },
 }
 import { 
@@ -76,7 +108,7 @@ export default async function Home() {
     },
   ]
 
-  const baseUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://summaryr.com'
+  const baseUrl = baseMarketingUrl
   
   const structuredData = {
     "@context": "https://schema.org",

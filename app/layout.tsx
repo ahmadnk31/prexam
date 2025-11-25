@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
@@ -32,9 +32,13 @@ function getBaseUrl(): URL | undefined {
 }
 
 const baseUrl = getBaseUrl()
+const canonicalUrl = baseUrl?.origin ?? "https://summaryr.com"
 
 export const metadata: Metadata = {
   ...(baseUrl && { metadataBase: baseUrl }),
+  applicationName: "Summaryr",
+  generator: "Next.js 14",
+  category: "education",
   title: {
     default: "Summaryr - AI-Powered Study Platform",
     template: "%s | Summaryr",
@@ -61,6 +65,13 @@ export const metadata: Metadata = {
   authors: [{ name: "Summaryr" }],
   creator: "Summaryr",
   publisher: "Summaryr",
+  alternates: {
+    canonical: "/",
+    languages: {
+      "en-US": "/",
+      "en": "/",
+    },
+  },
   icons: {
     icon: [
       { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
@@ -76,6 +87,25 @@ export const metadata: Metadata = {
     ],
   },
   manifest: "/site.webmanifest",
+  referrer: "strict-origin-when-cross-origin",
+  appleWebApp: {
+    capable: true,
+    title: "Summaryr",
+    statusBarStyle: "default",
+  },
+  appLinks: {
+    ios: {
+      url: canonicalUrl,
+    },
+    android: {
+      package: "com.summaryr.app",
+      url: canonicalUrl,
+    },
+    web: {
+      url: canonicalUrl,
+      should_fallback: true,
+    },
+  },
   formatDetection: {
     email: false,
     address: false,
@@ -84,15 +114,15 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: "/",
+    url: canonicalUrl,
     siteName: "Summaryr",
     title: "Summaryr - AI-Powered Study Platform",
     description: "Transform videos and documents into flashcards and practice questions with AI. Study smarter with automated transcription, spaced repetition flashcards, and AI-generated quizzes.",
     images: [
       {
-        url: "/logo.png",
-        width: 1200,
-        height: 630,
+        url: `${canonicalUrl}/logo.png`,
+        width: 1302,
+        height: 367,
         alt: "Summaryr - AI-Powered Study Platform",
       },
     ],
@@ -101,7 +131,9 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Summaryr - AI-Powered Study Platform",
     description: "Transform videos and documents into flashcards and practice questions with AI",
-    images: ["/logo.png"],
+    site: "@summaryr",
+    creator: "@summaryr",
+    images: [`${canonicalUrl}/logo.png`],
   },
   robots: {
     index: true,
@@ -119,6 +151,18 @@ export const metadata: Metadata = {
     // google: "your-google-verification-code",
     // yandex: "your-yandex-verification-code",
   },
+};
+
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  minimumScale: 1,
+  viewportFit: "cover",
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#ffffff" },
+    { media: "(prefers-color-scheme: dark)", color: "#4B3F72" },
+  ],
+  colorScheme: "light",
 };
 
 export default function RootLayout({

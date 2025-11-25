@@ -1,1 +1,40 @@
-{"name":"Summaryr - AI-Powered Study Platform","short_name":"Summaryr","icons":[{"src":"/android-chrome-192x192.png","sizes":"192x192","type":"image/png"},{"src":"/android-chrome-512x512.png","sizes":"512x512","type":"image/png"}],"theme_color":"#4B3F72","background_color":"#ffffff","display":"standalone"}
+{
+  "id": "/",
+  "name": "Summaryr - AI-Powered Study Platform",
+  "short_name": "Summaryr",
+  "description": "AI copilot that turns videos and documents into flashcards, notes, and quizzes.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#ffffff",
+  "theme_color": "#4B3F72",
+  "icons": [
+    {
+      "src": "/android-chrome-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable any"
+    },
+    {
+      "src": "/android-chrome-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Open Dashboard",
+      "description": "Jump straight into your library",
+      "url": "/dashboard/library"
+    },
+    {
+      "name": "Upload Content",
+      "description": "Start a new video or document analysis",
+      "url": "/dashboard/upload"
+    }
+  ],
+  "categories": ["education", "productivity"],
+  "prefer_related_applications": false
+}
