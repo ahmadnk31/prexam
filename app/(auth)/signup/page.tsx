@@ -63,6 +63,23 @@ export default function SignupPage() {
               console.warn('Profile creation/update failed:', createError)
             }
           }
+
+          // Send welcome email (non-blocking)
+          if (data.user.email) {
+            fetch('/api/email/send', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                type: 'welcome',
+                to: data.user.email,
+                userName: fullName || data.user.email.split('@')[0],
+                loginUrl: `${window.location.origin}/dashboard/library`,
+              }),
+            }).catch((emailError) => {
+              // Log but don't block signup
+              console.warn('Failed to send welcome email:', emailError)
+            })
+          }
         } catch (profileError) {
           // Log but don't block signup
           console.warn('Profile update error:', profileError)

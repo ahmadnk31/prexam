@@ -56,7 +56,19 @@ NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
 OPENAI_API_KEY=your_openai_api_key
 NEXT_PUBLIC_APP_URL=http://localhost:3000
+
+# Resend Email Configuration (Optional but recommended)
+RESEND_API_KEY=your_resend_api_key
+RESEND_FROM_EMAIL=noreply@yourdomain.com
+RESEND_REPLY_TO=support@yourdomain.com
 ```
+
+**Resend Setup** (for email functionality):
+1. Sign up at [resend.com](https://resend.com)
+2. Get your API key from the dashboard
+3. Verify your domain (or use the default `onboarding@resend.dev` for testing)
+4. Add the `RESEND_API_KEY` to your `.env.local`
+5. Optionally set `RESEND_FROM_EMAIL` and `RESEND_REPLY_TO` for custom sender addresses
 
 ### 4. Run the Development Server
 
