@@ -304,17 +304,18 @@ async function processDocument(documentId: string) {
 
   let fileBuffer: Buffer
   try {
-    const s3Key = extractS3KeyFromUrl(document.file_url)
-    if (s3Key) {
-      fileBuffer = await downloadFromS3(s3Key)
-    } else {
-      const fileResponse = await fetch(document.file_url)
-      if (!fileResponse.ok) {
-        throw new Error('Failed to download document file')
-      }
-      const arrayBuffer = await fileResponse.arrayBuffer()
-      fileBuffer = Buffer.from(arrayBuffer)
+    // Always use fetch with the public URL to avoid AWS SDK CRC32 checksum issues in Deno
+    // The file_url is already a public URL (CloudFront or S3 public URL)
+    console.log('Downloading document from URL:', document.file_url)
+    const fileResponse = await fetch(document.file_url)
+    
+    if (!fileResponse.ok) {
+      throw new Error(`Failed to download document file: ${fileResponse.status} ${fileResponse.statusText}`)
     }
+    
+    const arrayBuffer = await fileResponse.arrayBuffer()
+    fileBuffer = Buffer.from(arrayBuffer)
+    console.log('Document downloaded successfully, size:', fileBuffer.length, 'bytes')
   } catch (downloadError: any) {
     console.error('Document download error:', downloadError)
     await supabase

@@ -92,35 +92,57 @@ export async function POST(req: NextRequest) {
     // Upload file to S3
     try {
       const fileName = `${document.id}.${fileExt}`
+      console.log('Uploading document to S3:', {
+        fileName,
+        fileSize: file.size,
+        fileType: file.type,
+        userId: user.id,
+      })
 
       // Upload to S3
       const s3Key = await uploadToS3('documents', user.id, fileName, file, file.type)
+      console.log('Document uploaded to S3, key:', s3Key)
 
       // Get public URL (CloudFront or S3)
       const publicUrl = getPublicUrl('documents', s3Key)
+      console.log('Document public URL:', publicUrl)
 
       // Update document with URL and trigger processing
-      await serviceClient
+      const { error: updateError } = await serviceClient
         .from('documents')
         .update({
           file_url: publicUrl,
           status: 'processing',
         })
         .eq('id', document.id)
+
+      if (updateError) {
+        console.error('Error updating document with file URL:', updateError)
+        throw new Error(`Failed to update document: ${updateError.message}`)
+      }
+
+      console.log('Document record updated with file URL')
     } catch (uploadError: any) {
-      console.error('S3 upload error:', uploadError)
+      console.error('S3 upload error:', {
+        error: uploadError.message,
+        stack: uploadError.stack,
+        documentId: document.id,
+      })
       
       // Update document status to error
       await serviceClient
         .from('documents')
         .update({ status: 'error' })
         .eq('id', document.id)
+        .catch((updateError) => {
+          console.error('Failed to update document status to error:', updateError)
+        })
 
       return NextResponse.json(
         { 
           error: 'Failed to upload file',
           message: uploadError.message || 'Unknown error',
-          details: 'Check AWS credentials and S3 bucket configuration'
+          details: 'Check AWS credentials and S3 bucket configuration. See server logs for details.'
         },
         { status: 500 }
       )

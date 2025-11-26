@@ -93,22 +93,46 @@ export async function uploadToS3(
     detectedContentType = file.type
   }
 
-  const command = new PutObjectCommand({
+  const client = getS3Client()
+
+  // Try with ACL first (for buckets with ACLs enabled)
+  let command = new PutObjectCommand({
     Bucket: S3_BUCKET,
     Key: key,
     Body: body,
     ContentType: detectedContentType || 'application/octet-stream',
-    // Make files publicly readable (or use CloudFront signed URLs for private)
     ACL: 'public-read',
   })
 
   try {
-    const client = getS3Client()
     await client.send(command)
+    console.log('File uploaded to S3 successfully:', key)
     return key
   } catch (error: any) {
-    console.error('S3 upload error:', error)
-    throw new Error(`Failed to upload to S3: ${error.message || 'Unknown error'}`)
+    // If ACL fails (bucket has ACLs disabled), try without ACL
+    // Bucket policy should handle public access
+    if (error.name === 'NotImplemented' || error.message?.includes('ACL') || error.message?.includes('AccessControlListNotSupported')) {
+      console.log('ACL not supported, retrying without ACL:', error.message)
+      command = new PutObjectCommand({
+        Bucket: S3_BUCKET,
+        Key: key,
+        Body: body,
+        ContentType: detectedContentType || 'application/octet-stream',
+        // No ACL - rely on bucket policy for public access
+      })
+      
+      try {
+        await client.send(command)
+        console.log('File uploaded to S3 successfully (without ACL):', key)
+        return key
+      } catch (retryError: any) {
+        console.error('S3 upload error (retry without ACL):', retryError)
+        throw new Error(`Failed to upload to S3: ${retryError.message || 'Unknown error'}`)
+      }
+    } else {
+      console.error('S3 upload error:', error)
+      throw new Error(`Failed to upload to S3: ${error.message || 'Unknown error'}`)
+    }
   }
 }
 
