@@ -73,16 +73,27 @@ export async function uploadToS3(
   contentType?: string
 ): Promise<string> {
   if (!S3_BUCKET) {
+    console.error('S3_BUCKET is empty. Check AWS_S3_BUCKET environment variable.')
     throw new Error('AWS_S3_BUCKET environment variable is not set.')
   }
 
   const key = getS3Key(type, userId, fileName)
+  console.log('Preparing S3 upload:', {
+    bucket: S3_BUCKET,
+    key,
+    type,
+    fileName,
+    userId,
+    hasFile: !!file,
+    fileSize: file instanceof File || file instanceof Blob ? 'unknown' : file.length,
+  })
   
   // Convert File/Blob to Buffer if needed
   let body: Buffer | Uint8Array
   if (file instanceof File || file instanceof Blob) {
     const arrayBuffer = await file.arrayBuffer()
     body = Buffer.from(arrayBuffer)
+    console.log('Converted file to buffer, size:', body.length, 'bytes')
   } else {
     body = file
   }
@@ -94,6 +105,7 @@ export async function uploadToS3(
   }
 
   const client = getS3Client()
+  console.log('S3 client created, region:', process.env.AWS_REGION || 'us-east-1')
 
   // Try with ACL first (for buckets with ACLs enabled)
   let command = new PutObjectCommand({
@@ -105,14 +117,25 @@ export async function uploadToS3(
   })
 
   try {
+    console.log('Attempting S3 upload with ACL...')
     await client.send(command)
     console.log('File uploaded to S3 successfully:', key)
     return key
   } catch (error: any) {
+    console.error('S3 upload error (with ACL):', {
+      name: error.name,
+      message: error.message,
+      code: error.Code,
+      statusCode: error.$metadata?.httpStatusCode,
+    })
+    
     // If ACL fails (bucket has ACLs disabled), try without ACL
     // Bucket policy should handle public access
-    if (error.name === 'NotImplemented' || error.message?.includes('ACL') || error.message?.includes('AccessControlListNotSupported')) {
-      console.log('ACL not supported, retrying without ACL:', error.message)
+    if (error.name === 'NotImplemented' || 
+        error.message?.includes('ACL') || 
+        error.message?.includes('AccessControlListNotSupported') ||
+        error.Code === 'AccessControlListNotSupported') {
+      console.log('ACL not supported, retrying without ACL')
       command = new PutObjectCommand({
         Bucket: S3_BUCKET,
         Key: key,
@@ -122,15 +145,28 @@ export async function uploadToS3(
       })
       
       try {
+        console.log('Attempting S3 upload without ACL...')
         await client.send(command)
         console.log('File uploaded to S3 successfully (without ACL):', key)
         return key
       } catch (retryError: any) {
-        console.error('S3 upload error (retry without ACL):', retryError)
+        console.error('S3 upload error (retry without ACL):', {
+          name: retryError.name,
+          message: retryError.message,
+          code: retryError.Code,
+          statusCode: retryError.$metadata?.httpStatusCode,
+          stack: retryError.stack,
+        })
         throw new Error(`Failed to upload to S3: ${retryError.message || 'Unknown error'}`)
       }
     } else {
-      console.error('S3 upload error:', error)
+      console.error('S3 upload error (non-ACL):', {
+        name: error.name,
+        message: error.message,
+        code: error.Code,
+        statusCode: error.$metadata?.httpStatusCode,
+        stack: error.stack,
+      })
       throw new Error(`Failed to upload to S3: ${error.message || 'Unknown error'}`)
     }
   }

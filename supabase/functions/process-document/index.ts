@@ -288,6 +288,8 @@ async function detectLanguage(text: string): Promise<string> {
 }
 
 async function processDocument(documentId: string) {
+  console.log('Starting document processing:', { documentId, timestamp: new Date().toISOString() })
+  
   const { data: document, error: docError } = await supabase
     .from('documents')
     .select('*')
@@ -295,10 +297,19 @@ async function processDocument(documentId: string) {
     .single()
 
   if (docError || !document) {
+    console.error('Document not found:', { documentId, error: docError })
     throw new Error('Document not found')
   }
 
+  console.log('Document found:', {
+    documentId: document.id,
+    fileType: document.file_type,
+    fileUrl: document.file_url ? 'present' : 'missing',
+    status: document.status,
+  })
+
   if (!document.file_url) {
+    console.error('Document file URL is missing:', { documentId })
     throw new Error('Document file URL not found')
   }
 
@@ -307,17 +318,66 @@ async function processDocument(documentId: string) {
     // Always use fetch with the public URL to avoid AWS SDK CRC32 checksum issues in Deno
     // The file_url is already a public URL (CloudFront or S3 public URL)
     console.log('Downloading document from URL:', document.file_url)
-    const fileResponse = await fetch(document.file_url)
     
-    if (!fileResponse.ok) {
-      throw new Error(`Failed to download document file: ${fileResponse.status} ${fileResponse.statusText}`)
+    // Validate URL format
+    if (!document.file_url.startsWith('http://') && !document.file_url.startsWith('https://')) {
+      throw new Error(`Invalid file URL format: ${document.file_url}`)
+    }
+    
+    // Try downloading with retries (S3 files might not be immediately available)
+    let fileResponse: Response | null = null
+    let lastError: Error | null = null
+    
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        console.log(`Download attempt ${attempt}/3`)
+        fileResponse = await fetch(document.file_url, {
+          method: 'GET',
+          headers: {
+            'Accept': '*/*',
+          },
+        })
+        
+        if (fileResponse.ok) {
+          break
+        } else {
+          console.warn(`Download attempt ${attempt} failed: ${fileResponse.status} ${fileResponse.statusText}`)
+          if (attempt < 3 && fileResponse.status === 404) {
+            // Wait a bit before retrying (file might not be immediately available)
+            await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
+            continue
+          }
+          throw new Error(`Failed to download document file: ${fileResponse.status} ${fileResponse.statusText}`)
+        }
+      } catch (fetchError: any) {
+        lastError = fetchError
+        console.warn(`Download attempt ${attempt} error:`, fetchError.message)
+        if (attempt < 3) {
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt))
+          continue
+        }
+        throw fetchError
+      }
+    }
+    
+    if (!fileResponse || !fileResponse.ok) {
+      throw lastError || new Error('Failed to download document after 3 attempts')
     }
     
     const arrayBuffer = await fileResponse.arrayBuffer()
     fileBuffer = Buffer.from(arrayBuffer)
     console.log('Document downloaded successfully, size:', fileBuffer.length, 'bytes')
+    
+    if (fileBuffer.length === 0) {
+      throw new Error('Downloaded file is empty')
+    }
   } catch (downloadError: any) {
-    console.error('Document download error:', downloadError)
+    console.error('Document download error:', {
+      error: downloadError.message,
+      stack: downloadError.stack,
+      url: document.file_url,
+      documentId,
+    })
     await supabase
       .from('documents')
       .update({ status: 'error' })
@@ -386,7 +446,15 @@ async function processDocument(documentId: string) {
     console.error('Error detecting language:', error)
   }
 
-  await supabase
+  console.log('Updating document status to ready:', {
+    documentId,
+    textLength: extractedText.length,
+    chunksCount: chunks.length,
+    pageCount,
+    language: detectedLanguage,
+  })
+
+  const { error: updateError } = await supabase
     .from('documents')
     .update({
       extracted_text: extractedText,
@@ -395,6 +463,20 @@ async function processDocument(documentId: string) {
       status: 'ready',
     })
     .eq('id', documentId)
+
+  if (updateError) {
+    console.error('Error updating document status:', updateError)
+    throw new Error(`Failed to update document: ${updateError.message}`)
+  }
+
+  console.log('Document processing completed successfully:', {
+    documentId,
+    textLength: extractedText.length,
+    chunksCount: chunks.length,
+    pageCount,
+    language: detectedLanguage,
+    timestamp: new Date().toISOString(),
+  })
 
   return {
     success: true,
@@ -406,11 +488,25 @@ async function processDocument(documentId: string) {
   }
 }
 
+// Global error handler for unhandled rejections
+if (typeof Deno !== 'undefined') {
+  globalThis.addEventListener('unhandledrejection', (event) => {
+    console.error('Unhandled promise rejection:', event.reason)
+    event.preventDefault()
+  })
+  
+  globalThis.addEventListener('error', (event) => {
+    console.error('Unhandled error:', event.error)
+  })
+}
+
 serve(async (req) => {
+  const requestId = crypto.randomUUID()
   console.log('Edge function invoked:', {
+    requestId,
     method: req.method,
     url: req.url,
-    headers: Object.fromEntries(req.headers.entries()),
+    timestamp: new Date().toISOString(),
   })
 
   if (DOCUMENT_PROCESSING_SECRET) {
@@ -437,10 +533,18 @@ serve(async (req) => {
 
     // Always wait for completion to ensure processing finishes
     // Supabase Edge Functions may terminate background tasks after response is sent
-    // If waitForCompletion is false, we still process but return immediately after starting
-    // However, to ensure reliability, we'll wait for completion by default
+    console.log('Starting document processing, waitForCompletion:', waitForCompletion)
+    const startTime = Date.now()
+    
     try {
       const result = await processDocument(documentId)
+      const processingTime = Date.now() - startTime
+      console.log('Document processing finished:', {
+        documentId: result.documentId,
+        processingTimeMs: processingTime,
+        textLength: result.textLength,
+        chunksCount: result.chunksCount,
+      })
       
       if (waitForCompletion) {
         return new Response(JSON.stringify(result), { status: 200 })
@@ -458,10 +562,12 @@ serve(async (req) => {
         )
       }
     } catch (error: any) {
-      console.error('Document processing error:', {
+      const processingTime = Date.now() - startTime
+      console.error('Document processing failed after', processingTime, 'ms:', {
         documentId,
         error: error.message,
         stack: error.stack,
+        processingTimeMs: processingTime,
       })
       
       // Update document status to error

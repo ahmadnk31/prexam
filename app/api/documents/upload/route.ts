@@ -91,12 +91,23 @@ export async function POST(req: NextRequest) {
 
     // Upload file to S3
     try {
+      // Validate S3 configuration before attempting upload
+      const s3Bucket = process.env.AWS_S3_BUCKET
+      if (!s3Bucket) {
+        console.error('AWS_S3_BUCKET is not set in environment variables')
+        throw new Error('S3 bucket not configured. Please set AWS_S3_BUCKET environment variable.')
+      }
+
       const fileName = `${document.id}.${fileExt}`
       console.log('Uploading document to S3:', {
+        bucket: s3Bucket,
         fileName,
         fileSize: file.size,
         fileType: file.type,
         userId: user.id,
+        hasAccessKey: !!process.env.AWS_ACCESS_KEY_ID,
+        hasSecretKey: !!process.env.AWS_SECRET_ACCESS_KEY,
+        region: process.env.AWS_REGION || 'us-east-1',
       })
 
       // Upload to S3
@@ -148,15 +159,23 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Trigger Supabase Edge Function to process text (fire-and-forget)
-    // Note: We use waitForCompletion: false to return quickly, but the Edge Function
-    // should handle the processing. If it doesn't work, we may need to wait.
+    // Trigger Supabase Edge Function to process text
+    // Process in background (don't await to return quickly to user)
+    // The Edge Function has retry logic to handle files that aren't immediately available
     processDocument(document.id, { waitForCompletion: false })
       .then(() => {
-        console.log('Document sent to Supabase Edge function for processing')
+        console.log('Document processed successfully by Edge function')
       })
       .catch((error) => {
-        console.error('Background document processing error:', error)
+        console.error('Document processing error:', error)
+        // Update document status to error if processing fails
+        serviceClient
+          .from('documents')
+          .update({ status: 'error' })
+          .eq('id', document.id)
+          .catch((updateError) => {
+            console.error('Failed to update document status:', updateError)
+          })
       })
 
     return NextResponse.json({ documentId: document.id })
