@@ -36,24 +36,55 @@ export async function processDocument(
     headers['x-process-secret'] = DOCUMENT_PROCESSING_SECRET
   }
 
-  const response = await fetch(`${SUPABASE_FUNCTION_URL}/process-document`, {
-    method: 'POST',
-    headers,
-    body: JSON.stringify(payload),
+  // Ensure URL doesn't have trailing slash
+  const baseUrl = SUPABASE_FUNCTION_URL.replace(/\/$/, '')
+  const functionUrl = `${baseUrl}/process-document`
+
+  console.log('Invoking Supabase Edge function:', {
+    url: functionUrl,
+    documentId,
+    waitForCompletion: options.waitForCompletion,
   })
 
-  let data: any = null
   try {
-    data = await response.json()
-  } catch (error) {
-    console.error('Failed to parse process-document response:', error)
-  }
+    const response = await fetch(functionUrl, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify(payload),
+    })
 
-  if (!response.ok) {
-    const message = data?.error || 'Failed to trigger document processing'
-    throw new Error(message)
-  }
+    console.log('Edge function response:', {
+      status: response.status,
+      statusText: response.statusText,
+      ok: response.ok,
+    })
 
-  return data
+    let data: any = null
+    try {
+      const text = await response.text()
+      if (text) {
+        data = JSON.parse(text)
+      }
+    } catch (error) {
+      console.error('Failed to parse process-document response:', error)
+      throw new Error(`Failed to parse response: ${error instanceof Error ? error.message : 'Unknown error'}`)
+    }
+
+    if (!response.ok) {
+      const message = data?.error || `Edge function returned ${response.status}: ${response.statusText}`
+      console.error('Edge function error:', message, data)
+      throw new Error(message)
+    }
+
+    console.log('Edge function success:', data)
+    return data
+  } catch (error: any) {
+    console.error('Failed to invoke Edge function:', {
+      error: error.message,
+      stack: error.stack,
+      url: functionUrl,
+    })
+    throw error
+  }
 }
 

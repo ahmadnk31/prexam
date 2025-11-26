@@ -42,3 +42,6 @@ next-env.d.ts
 
 # YouTube player scripts (created by ytdl-core)
 *-player-script.js
+
+# supabase functions
+supabase/functions/*

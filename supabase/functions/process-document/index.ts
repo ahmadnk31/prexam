@@ -9,6 +9,22 @@ import epub from 'npm:epub2'
 import { Readable } from 'node:stream'
 import { Buffer } from 'node:buffer'
 
+// Lazy load pdf-parse as it's a CommonJS module
+let pdfParseModule: any = null
+
+async function getPdfParse() {
+  if (!pdfParseModule) {
+    const imported = await import('npm:pdf-parse')
+    // pdf-parse is CommonJS, so it might be in default or as a namespace
+    pdfParseModule = imported.default || imported
+    // If it's still a module object, try accessing the function directly
+    if (typeof pdfParseModule !== 'function' && pdfParseModule.default) {
+      pdfParseModule = pdfParseModule.default
+    }
+  }
+  return pdfParseModule
+}
+
 type DocumentRecord = {
   id: string
   file_url: string
@@ -88,16 +104,6 @@ async function downloadFromS3(s3Key: string): Promise<Buffer> {
 
   const stream = response.Body as ReadableStream<Uint8Array>
   return bufferFromStream(stream)
-}
-
-let pdfParseModule: any | null = null
-
-async function getPdfParse() {
-  if (!pdfParseModule) {
-    const imported = await import('npm:pdf-parse')
-    pdfParseModule = imported.default ?? imported
-  }
-  return pdfParseModule
 }
 
 async function extractPDFText(fileBuffer: Buffer) {
@@ -329,19 +335,29 @@ async function processDocument(documentId: string) {
 }
 
 serve(async (req) => {
+  console.log('Edge function invoked:', {
+    method: req.method,
+    url: req.url,
+    headers: Object.fromEntries(req.headers.entries()),
+  })
+
   if (DOCUMENT_PROCESSING_SECRET) {
     const providedSecret = req.headers.get('x-process-secret')
     if (providedSecret !== DOCUMENT_PROCESSING_SECRET) {
+      console.error('Unauthorized: secret mismatch')
       return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
     }
   }
 
   if (req.method !== 'POST') {
+    console.error('Method not allowed:', req.method)
     return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
   }
 
   try {
-    const { documentId, waitForCompletion = false } = await req.json()
+    const body = await req.json()
+    console.log('Request body:', body)
+    const { documentId, waitForCompletion = false } = body
 
     if (!documentId) {
       return new Response(JSON.stringify({ error: 'documentId is required' }), { status: 400 })
