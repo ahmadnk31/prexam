@@ -127,7 +127,9 @@ export async function POST(req: NextRequest) {
     }
 
     // Trigger Supabase Edge Function to process text (fire-and-forget)
-    processDocument(document.id)
+    // Note: We use waitForCompletion: false to return quickly, but the Edge Function
+    // should handle the processing. If it doesn't work, we may need to wait.
+    processDocument(document.id, { waitForCompletion: false })
       .then(() => {
         console.log('Document sent to Supabase Edge function for processing')
       })

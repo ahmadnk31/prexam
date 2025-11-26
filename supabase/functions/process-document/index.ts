@@ -65,7 +65,42 @@ function bufferToStream(buffer: Buffer) {
 }
 
 async function bufferFromStream(body: any): Promise<Buffer> {
-  // AWS SDK v3 provides transformToWebStream() - use this first
+  // Handle Uint8Array directly (fastest path)
+  if (body instanceof Uint8Array) {
+    return Buffer.from(body)
+  }
+
+  // Handle Blob
+  if (body instanceof Blob) {
+    const arrayBuffer = await body.arrayBuffer()
+    return Buffer.from(arrayBuffer)
+  }
+
+  // Handle Node.js Readable stream FIRST (before transformToWebStream to avoid CRC32 errors)
+  // AWS SDK v3 in Deno often returns a Node.js stream that has .on() method
+  if (body && typeof body.on === 'function') {
+    return new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = []
+      body.on('data', (chunk: Buffer) => chunks.push(chunk))
+      body.on('end', () => resolve(Buffer.concat(chunks)))
+      body.on('error', reject)
+    })
+  }
+
+  // Handle Web ReadableStream (if it's already a Web stream)
+  if (body && typeof body.getReader === 'function') {
+    const chunks: Uint8Array[] = []
+    const reader = body.getReader()
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      if (value) chunks.push(value)
+    }
+    return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)))
+  }
+
+  // Last resort: try transformToWebStream (but this may trigger CRC32 errors in Deno)
+  // Only use if none of the above methods work
   if (body && typeof body.transformToWebStream === 'function') {
     try {
       const webStream = body.transformToWebStream()
@@ -78,42 +113,18 @@ async function bufferFromStream(body: any): Promise<Buffer> {
       }
       return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)))
     } catch (error) {
-      console.error('Error using transformToWebStream:', error)
-      // Fall through to other methods
+      console.error('Error using transformToWebStream (CRC32 issue in Deno):', error)
+      // If transformToWebStream fails, try reading as Node stream if it has readable properties
+      if (body && typeof body.read === 'function') {
+        const chunks: Buffer[] = []
+        let chunk: Buffer | null
+        while ((chunk = body.read()) !== null) {
+          chunks.push(chunk)
+        }
+        return Buffer.concat(chunks)
+      }
+      throw new Error(`Failed to read stream: ${error instanceof Error ? error.message : 'Unknown error'}`)
     }
-  }
-
-  // Handle Blob
-  if (body instanceof Blob) {
-    const arrayBuffer = await body.arrayBuffer()
-    return Buffer.from(arrayBuffer)
-  }
-
-  // Handle Web ReadableStream
-  if (body && typeof body.getReader === 'function') {
-    const chunks: Uint8Array[] = []
-    const reader = body.getReader()
-    while (true) {
-      const { value, done } = await reader.read()
-      if (done) break
-      if (value) chunks.push(value)
-    }
-    return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)))
-  }
-
-  // Handle Node.js Readable stream
-  if (body && typeof body.on === 'function') {
-    return new Promise<Buffer>((resolve, reject) => {
-      const chunks: Buffer[] = []
-      body.on('data', (chunk: Buffer) => chunks.push(chunk))
-      body.on('end', () => resolve(Buffer.concat(chunks)))
-      body.on('error', reject)
-    })
-  }
-
-  // Handle Uint8Array directly
-  if (body instanceof Uint8Array) {
-    return Buffer.from(body)
   }
 
   throw new Error(`Unsupported body type: ${typeof body}, constructor: ${body?.constructor?.name}`)
@@ -423,28 +434,54 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: 'documentId is required' }), { status: 400 })
     }
 
-    if (waitForCompletion) {
+    // Always wait for completion to ensure processing finishes
+    // Supabase Edge Functions may terminate background tasks after response is sent
+    // If waitForCompletion is false, we still process but return immediately after starting
+    // However, to ensure reliability, we'll wait for completion by default
+    try {
       const result = await processDocument(documentId)
-      return new Response(JSON.stringify(result), { status: 200 })
-    }
-
-    processDocument(documentId)
-      .then((result) => {
-        console.log('Document processed:', result)
-      })
-      .catch((error) => {
-        console.error('Background processing error:', error)
-      })
-
-    return new Response(
-      JSON.stringify({
-        success: true,
-        queued: true,
+      
+      if (waitForCompletion) {
+        return new Response(JSON.stringify(result), { status: 200 })
+      } else {
+        // Return success immediately, processing is complete
+        return new Response(
+          JSON.stringify({
+            success: true,
+            queued: false,
+            completed: true,
+            documentId: result.documentId,
+            message: 'Document processing completed',
+          }),
+          { status: 200 }
+        )
+      }
+    } catch (error: any) {
+      console.error('Document processing error:', {
         documentId,
-        message: 'Document processing started',
-      }),
-      { status: 202 }
-    )
+        error: error.message,
+        stack: error.stack,
+      })
+      
+      // Update document status to error
+      try {
+        await supabase
+          .from('documents')
+          .update({ status: 'error' })
+          .eq('id', documentId)
+      } catch (updateError: any) {
+        console.error('Failed to update document status to error:', updateError)
+      }
+      
+      return new Response(
+        JSON.stringify({
+          error: 'Failed to process document',
+          message: error.message || 'Unknown error',
+          documentId,
+        }),
+        { status: 500 }
+      )
+    }
   } catch (error: any) {
     console.error('Process document function error:', error)
     return new Response(JSON.stringify({ error: error.message || 'Failed to process document' }), {
