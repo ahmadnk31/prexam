@@ -4,10 +4,122 @@
 import { serve } from 'https://deno.land/std@0.224.0/http/server.ts'
 import { createClient } from 'npm:@supabase/supabase-js'
 import { S3Client, GetObjectCommand } from 'npm:@aws-sdk/client-s3'
-import mammoth from 'npm:mammoth'
-import epub from 'npm:epub2'
 import { Readable } from 'node:stream'
 import { Buffer } from 'node:buffer'
+
+// IMPORTANT: Set up polyfills BEFORE importing mammoth/epub
+// These libraries may use DOMMatrix during module initialization
+// Polyfill DOMMatrix and other DOM APIs for Deno environment
+// These are needed by mammoth and other libraries that expect browser APIs
+if (typeof globalThis.DOMMatrix === 'undefined') {
+  // Comprehensive DOMMatrix polyfill
+  const DOMMatrixImpl = class DOMMatrix {
+    a = 1
+    b = 0
+    c = 0
+    d = 1
+    e = 0
+    f = 0
+    m11 = 1
+    m12 = 0
+    m21 = 0
+    m22 = 1
+    m41 = 0
+    m42 = 0
+    m13 = 0
+    m14 = 0
+    m23 = 0
+    m24 = 0
+    m31 = 0
+    m32 = 0
+    m33 = 1
+    m34 = 0
+    m43 = 0
+    m44 = 1
+    
+    constructor(init?: string | number[] | DOMMatrix) {
+      // Handle different constructor arguments
+      if (typeof init === 'string') {
+        // Parse matrix string if provided
+        // For now, just use identity matrix
+      } else if (Array.isArray(init)) {
+        // Handle array of numbers
+        if (init.length >= 6) {
+          this.a = init[0] || 1
+          this.b = init[1] || 0
+          this.c = init[2] || 0
+          this.d = init[3] || 1
+          this.e = init[4] || 0
+          this.f = init[5] || 0
+        }
+      } else if (init) {
+        // Copy from another DOMMatrix
+        Object.assign(this, init)
+      }
+    }
+    
+    static fromMatrix(other?: DOMMatrix) {
+      return new DOMMatrixImpl(other as any)
+    }
+    
+    static fromFloat32Array(array32: Float32Array) {
+      return new DOMMatrixImpl(Array.from(array32))
+    }
+    
+    static fromFloat64Array(array64: Float64Array) {
+      return new DOMMatrixImpl(Array.from(array64))
+    }
+    
+    translateSelf(tx = 0, ty = 0, tz = 0) {
+      this.e += tx
+      this.f += ty
+      return this
+    }
+    
+    scaleSelf(scaleX = 1, scaleY = scaleX, scaleZ = 1, originX = 0, originY = 0, originZ = 0) {
+      this.a *= scaleX
+      this.d *= scaleY
+      return this
+    }
+    
+    rotateSelf(rotX = 0, rotY = 0, rotZ = 0) {
+      // Simplified rotation - just return this for now
+      return this
+    }
+    
+    multiply(other: DOMMatrix) {
+      return new DOMMatrixImpl(this)
+    }
+    
+    invertSelf() {
+      return this
+    }
+    
+    setMatrixValue(transformList: string) {
+      // Parse CSS transform string - simplified
+      return this
+    }
+  }
+  
+  globalThis.DOMMatrix = DOMMatrixImpl as any
+  console.log('DOMMatrix polyfill installed')
+}
+
+// Polyfill DOMParser if needed
+if (typeof globalThis.DOMParser === 'undefined') {
+  // Minimal DOMParser polyfill
+  globalThis.DOMParser = class DOMParser {
+    parseFromString(source: string, mimeType: string) {
+      return {
+        documentElement: {
+          getElementsByTagName: () => [],
+          querySelector: () => null,
+          querySelectorAll: () => [],
+        },
+      } as any
+    }
+  } as any
+}
 
 // Lazy load pdf-parse as it's a CommonJS module
 let pdfParseModule: any = null
@@ -23,6 +135,26 @@ async function getPdfParse() {
     }
   }
   return pdfParseModule
+}
+
+// Lazy load mammoth and epub after polyfills are set up
+let mammothModule: any = null
+let epubModule: any = null
+
+async function getMammoth() {
+  if (!mammothModule) {
+    mammothModule = await import('npm:mammoth')
+    mammothModule = mammothModule.default || mammothModule
+  }
+  return mammothModule
+}
+
+async function getEpub() {
+  if (!epubModule) {
+    epubModule = await import('npm:epub2')
+    epubModule = epubModule.default || epubModule
+  }
+  return epubModule
 }
 
 type DocumentRecord = {
@@ -187,6 +319,8 @@ async function extractPDFText(fileBuffer: Buffer) {
 }
 
 async function extractWordText(fileBuffer: Buffer) {
+  // Load mammoth after polyfills are set up
+  const mammoth = await getMammoth()
   const result = await mammoth.extractRawText({ buffer: fileBuffer })
   const wordCount = result.value.split(/\s+/).length
   const estimatedPages = Math.max(1, Math.ceil(wordCount / 500))
@@ -197,8 +331,10 @@ async function extractWordText(fileBuffer: Buffer) {
 }
 
 async function extractEPUBText(fileBuffer: Buffer) {
-  return new Promise<{ text: string; pageCount: number }>((resolve, reject) => {
+  return new Promise<{ text: string; pageCount: number }>(async (resolve, reject) => {
     try {
+      // Load epub after polyfills are set up
+      const epub = await getEpub()
       const book = new (epub as any)(bufferToStream(fileBuffer))
       let fullText = ''
 

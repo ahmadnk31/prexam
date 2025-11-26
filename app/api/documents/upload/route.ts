@@ -162,12 +162,24 @@ export async function POST(req: NextRequest) {
     // Trigger Supabase Edge Function to process text
     // Process in background (don't await to return quickly to user)
     // The Edge Function has retry logic to handle files that aren't immediately available
+    console.log('Triggering Edge Function for document processing:', {
+      documentId: document.id,
+      fileUrl: document.file_url,
+    })
+    
     processDocument(document.id, { waitForCompletion: false })
-      .then(() => {
-        console.log('Document processed successfully by Edge function')
+      .then((result) => {
+        console.log('Document processed successfully by Edge function:', {
+          documentId: result.documentId,
+          success: result.success,
+        })
       })
       .catch((error) => {
-        console.error('Document processing error:', error)
+        console.error('Document processing error:', {
+          documentId: document.id,
+          error: error.message,
+          stack: error.stack,
+        })
         // Update document status to error if processing fails
         serviceClient
           .from('documents')
