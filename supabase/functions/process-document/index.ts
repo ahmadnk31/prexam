@@ -64,15 +64,59 @@ function bufferToStream(buffer: Buffer) {
   return Readable.from(buffer)
 }
 
-async function bufferFromStream(stream: ReadableStream<Uint8Array>): Promise<Buffer> {
-  const chunks: Uint8Array[] = []
-  const reader = stream.getReader()
-  while (true) {
-    const { value, done } = await reader.read()
-    if (done) break
-    if (value) chunks.push(value)
+async function bufferFromStream(body: any): Promise<Buffer> {
+  // AWS SDK v3 provides transformToWebStream() - use this first
+  if (body && typeof body.transformToWebStream === 'function') {
+    try {
+      const webStream = body.transformToWebStream()
+      const chunks: Uint8Array[] = []
+      const reader = webStream.getReader()
+      while (true) {
+        const { value, done } = await reader.read()
+        if (done) break
+        if (value) chunks.push(value)
+      }
+      return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)))
+    } catch (error) {
+      console.error('Error using transformToWebStream:', error)
+      // Fall through to other methods
+    }
   }
-  return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)))
+
+  // Handle Blob
+  if (body instanceof Blob) {
+    const arrayBuffer = await body.arrayBuffer()
+    return Buffer.from(arrayBuffer)
+  }
+
+  // Handle Web ReadableStream
+  if (body && typeof body.getReader === 'function') {
+    const chunks: Uint8Array[] = []
+    const reader = body.getReader()
+    while (true) {
+      const { value, done } = await reader.read()
+      if (done) break
+      if (value) chunks.push(value)
+    }
+    return Buffer.concat(chunks.map((chunk) => Buffer.from(chunk)))
+  }
+
+  // Handle Node.js Readable stream
+  if (body && typeof body.on === 'function') {
+    return new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = []
+      body.on('data', (chunk: Buffer) => chunks.push(chunk))
+      body.on('end', () => resolve(Buffer.concat(chunks)))
+      body.on('error', reject)
+    })
+  }
+
+  // Handle Uint8Array directly
+  if (body instanceof Uint8Array) {
+    return Buffer.from(body)
+  }
+
+  throw new Error(`Unsupported body type: ${typeof body}, constructor: ${body?.constructor?.name}`)
 }
 
 function extractS3KeyFromUrl(url: string): string | null {
@@ -102,8 +146,24 @@ async function downloadFromS3(s3Key: string): Promise<Buffer> {
     throw new Error('No data returned from S3')
   }
 
-  const stream = response.Body as ReadableStream<Uint8Array>
-  return bufferFromStream(stream)
+  console.log('S3 response body type:', typeof response.Body, response.Body.constructor?.name)
+  
+  // Pass the body directly - bufferFromStream will handle different types
+  try {
+    return await bufferFromStream(response.Body)
+  } catch (error: any) {
+    console.error('Error converting S3 body to buffer:', error)
+    console.error('Body type details:', {
+      type: typeof response.Body,
+      constructor: response.Body?.constructor?.name,
+      hasGetReader: typeof (response.Body as any)?.getReader === 'function',
+      hasOn: typeof (response.Body as any)?.on === 'function',
+      hasTransformToWebStream: typeof (response.Body as any)?.transformToWebStream === 'function',
+      isBlob: response.Body instanceof Blob,
+      isUint8Array: response.Body instanceof Uint8Array,
+    })
+    throw error
+  }
 }
 
 async function extractPDFText(fileBuffer: Buffer) {
