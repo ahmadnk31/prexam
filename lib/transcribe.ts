@@ -525,8 +525,8 @@ export async function transcribeVideo(videoId: string) {
       }
     }
   } else if (video.video_url) {
-    // Download video from S3
-    const { extractS3KeyFromUrl, downloadFromS3 } = await import('@/lib/s3')
+    // Extract audio from video using AWS Lambda (if configured) or download directly
+    const { extractS3KeyFromUrl, downloadFromS3, getPublicUrl } = await import('@/lib/s3')
     
     const s3Key = extractS3KeyFromUrl(video.video_url)
     
@@ -538,21 +538,73 @@ export async function transcribeVideo(videoId: string) {
       throw new Error('Could not extract S3 key from video URL')
     }
 
-    let arrayBuffer: ArrayBuffer
-    try {
-      const fileBuffer = await downloadFromS3('videos', s3Key)
-      arrayBuffer = fileBuffer.buffer
-    } catch (downloadError: any) {
-      console.error('S3 download error:', downloadError)
-      console.error('S3 key attempted:', s3Key)
-      console.error('Video URL:', video.video_url)
-      await serviceClient
-        .from('videos')
-        .update({ status: 'error' })
-        .eq('id', videoId)
-      throw new Error(`Failed to download video from S3: ${downloadError.message || 'Unknown error'}`)
+    // Try to use Lambda for audio extraction if configured
+    const useLambda = !!process.env.AWS_LAMBDA_EXTRACT_AUDIO_FUNCTION
+    const s3Bucket = process.env.AWS_S3_BUCKET || ''
+    
+    if (useLambda && s3Bucket) {
+      try {
+        console.log('Using AWS Lambda to extract audio from video')
+        const { extractAudioFromVideo } = await import('@/lib/lambda-audio-extract')
+        
+        // Extract audio using Lambda
+        const audioResult = await extractAudioFromVideo({
+          videoS3Key: s3Key,
+          videoS3Bucket: s3Bucket,
+          outputS3Key: s3Key.replace(/\.(mp4|webm|mov|avi|mkv)$/i, '.mp3').replace(/^videos\//, 'audio/'),
+          outputS3Bucket: s3Bucket,
+        })
+        
+        console.log('Audio extracted successfully:', audioResult)
+        
+        // Download the extracted audio file
+        const audioS3Key = audioResult.audioS3Key
+        try {
+          const fileBuffer = await downloadFromS3('audio', audioS3Key.replace(/^audio\//, ''))
+          audioBuffer = fileBuffer
+        } catch (downloadError: any) {
+          console.error('Failed to download extracted audio:', downloadError)
+          // Fall back to downloading video directly
+          console.log('Falling back to direct video download')
+          const fileBuffer = await downloadFromS3('videos', s3Key)
+          audioBuffer = fileBuffer
+        }
+      } catch (lambdaError: any) {
+        console.warn('Lambda audio extraction failed, falling back to direct download:', lambdaError.message)
+        // Fall back to downloading video directly
+        let arrayBuffer: ArrayBuffer
+        try {
+          const fileBuffer = await downloadFromS3('videos', s3Key)
+          arrayBuffer = fileBuffer.buffer
+        } catch (downloadError: any) {
+          console.error('S3 download error:', downloadError)
+          await serviceClient
+            .from('videos')
+            .update({ status: 'error' })
+            .eq('id', videoId)
+          throw new Error(`Failed to download video from S3: ${downloadError.message || 'Unknown error'}`)
+        }
+        audioBuffer = Buffer.from(arrayBuffer)
+      }
+    } else {
+      // Direct download (original behavior)
+      console.log('Downloading video directly from S3 (Lambda not configured)')
+      let arrayBuffer: ArrayBuffer
+      try {
+        const fileBuffer = await downloadFromS3('videos', s3Key)
+        arrayBuffer = fileBuffer.buffer
+      } catch (downloadError: any) {
+        console.error('S3 download error:', downloadError)
+        console.error('S3 key attempted:', s3Key)
+        console.error('Video URL:', video.video_url)
+        await serviceClient
+          .from('videos')
+          .update({ status: 'error' })
+          .eq('id', videoId)
+        throw new Error(`Failed to download video from S3: ${downloadError.message || 'Unknown error'}`)
+      }
+      audioBuffer = Buffer.from(arrayBuffer)
     }
-    audioBuffer = Buffer.from(arrayBuffer)
   } else {
     await serviceClient
       .from('videos')

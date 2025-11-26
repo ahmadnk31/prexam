@@ -1,0 +1,14 @@
+{
+  "name": "extract-audio-lambda",
+  "version": "1.0.0",
+  "description": "AWS Lambda function to extract audio from video files",
+  "main": "index.js",
+  "type": "module",
+  "scripts": {
+    "package": "zip -r function.zip . -x '*.git*' '*.zip' 'node_modules/.cache/*'"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.939.0"
+  }
+}
+

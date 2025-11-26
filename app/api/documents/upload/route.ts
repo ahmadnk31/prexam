@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/supabase/server'
 import { createServiceClient } from '@/supabase/service'
 import { uploadToS3, getPublicUrl } from '@/lib/s3'
+import { processDocument } from '@/lib/document-processor'
 
 // Configure for large file uploads
 export const runtime = 'nodejs'
@@ -125,15 +126,14 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Trigger text extraction in background (don't wait)
-    // Use dynamic import to avoid blocking the response
-    import('@/lib/document-processor').then(({ processDocument }) => {
-      processDocument(document.id).catch((error) => {
+    // Trigger Supabase Edge Function to process text (fire-and-forget)
+    processDocument(document.id)
+      .then(() => {
+        console.log('Document sent to Supabase Edge function for processing')
+      })
+      .catch((error) => {
         console.error('Background document processing error:', error)
       })
-    }).catch((error) => {
-      console.error('Failed to load document processor:', error)
-    })
 
     return NextResponse.json({ documentId: document.id })
   } catch (error: any) {

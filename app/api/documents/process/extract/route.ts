@@ -9,7 +9,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Document ID is required' }, { status: 400 })
     }
 
-    const result = await processDocument(documentId)
+    const result = await processDocument(documentId, { waitForCompletion: true })
 
     return NextResponse.json(result)
   } catch (error: any) {

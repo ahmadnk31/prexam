@@ -2,7 +2,7 @@
 
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useEffect, useRef, useImperativeHandle, forwardRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useImperativeHandle, forwardRef, useState, useCallback, useMemo } from 'react'
 
 // YouTube IFrame API types
 declare global {
@@ -392,30 +392,30 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
             tagName: videoEl.tagName,
             readyState: videoEl.readyState,
           })
-            
-            // Initialize Plyr
+          
+          // Initialize Plyr
           const player = new PlyrModule(videoEl, {
-              controls: [
-                'play-large',
-                'play',
-                'progress',
-                'current-time',
-                'duration',
-                'mute',
-                'volume',
-                'settings',
-                'pip',
-                'fullscreen',
-              ],
-              settings: ['captions', 'quality', 'speed'],
-              keyboard: { focused: true, global: false },
-              tooltips: { controls: true, seek: true },
-              clickToPlay: true,
+            controls: [
+              'play-large',
+              'play',
+              'progress',
+              'current-time',
+              'duration',
+              'mute',
+              'volume',
+              'settings',
+              'pip',
+              'fullscreen',
+            ],
+            settings: ['captions', 'quality', 'speed'],
+            keyboard: { focused: true, global: false },
+            tooltips: { controls: true, seek: true },
+            clickToPlay: true,
               hideControls: false, // Keep controls visible when playing
-              resetOnEnd: false,
-            })
+            resetOnEnd: false,
+          })
 
-            plyrRef.current = player
+          plyrRef.current = player
           console.log('Plyr initialized successfully', {
             player,
             container: (player as any).elements?.container,
@@ -424,7 +424,7 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
             // Handle time updates from Plyr - use the current onTimeUpdate from closure
             const currentOnTimeUpdate = onTimeUpdate
             if (currentOnTimeUpdate) {
-              player.on('timeupdate', () => {
+            player.on('timeupdate', () => {
                 if (currentOnTimeUpdate && player.currentTime !== undefined) {
                   currentOnTimeUpdate(player.currentTime)
                 }
@@ -440,8 +440,8 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
           player.on('error', (error: any) => {
             console.error('Plyr player error:', error)
           })
-          } catch (error) {
-            console.error('Error initializing Plyr:', error)
+        } catch (error) {
+          console.error('Error initializing Plyr:', error)
           plyrRef.current = null // Reset on error
         }
       }
@@ -530,6 +530,59 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
       }
     }, [video.video_url, video.youtube_url, video.status]) // Removed initPlyrPlayer from deps to prevent infinite loops
 
+    // Reset error state when video URL changes and force video reload
+    // This must be outside conditional blocks to follow Rules of Hooks
+    useEffect(() => {
+      // Only process if we have a video URL (not YouTube)
+      if (!video.video_url || video.youtube_url) {
+        return
+      }
+
+      // video_url should always be a full URL (CloudFront or S3)
+      // Ensure it has https:// protocol (fix for old URLs that might be missing it)
+      let videoSrc = video.video_url
+      if (!videoSrc.startsWith('http://') && !videoSrc.startsWith('https://')) {
+        videoSrc = `https://${videoSrc}`
+      }
+
+      setVideoError(null)
+      setIsLoading(true)
+      
+      // Force video element to reload when URL changes
+      if (videoRef.current) {
+        videoRef.current.load()
+      }
+      
+      // Test if the URL is accessible
+      const testUrl = async () => {
+        try {
+          const response = await fetch(videoSrc, { method: 'HEAD', mode: 'no-cors' })
+          console.log('Video URL test (HEAD request):', videoSrc)
+        } catch (error) {
+          console.warn('Video URL test failed (this is normal for CORS):', error)
+        }
+      }
+      testUrl()
+      
+      // Set a timeout to detect if video never loads (15 seconds)
+      if (loadingTimeoutRef.current) {
+        clearTimeout(loadingTimeoutRef.current)
+      }
+      
+      loadingTimeoutRef.current = setTimeout(() => {
+        console.warn('Video loading timeout after 15 seconds')
+        setVideoError('Video is taking too long to load. This could be a network issue, CORS problem, or the file might be inaccessible. Try opening the URL directly in a new tab.')
+        setIsLoading(false)
+      }, 15000) // 15 second timeout
+      
+      return () => {
+        if (loadingTimeoutRef.current) {
+          clearTimeout(loadingTimeoutRef.current)
+          loadingTimeoutRef.current = null
+        }
+      }
+    }, [video.video_url, video.youtube_url])
+
     // For YouTube videos, use Vidstack MediaPlayer
     if (video.youtube_url) {
       const youtubeId = extractYouTubeId(video.youtube_url)
@@ -596,53 +649,19 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
         videoSrc = `https://${videoSrc}`
       }
 
-      // Reset error state when video URL changes and force video reload
-      useEffect(() => {
-        setVideoError(null)
-        setIsLoading(true)
-        
-        // Force video element to reload when URL changes
-        if (videoRef.current) {
-          videoRef.current.load()
-        }
-        
-        // Test if the URL is accessible
-        const testUrl = async () => {
-          try {
-            const response = await fetch(videoSrc, { method: 'HEAD', mode: 'no-cors' })
-            console.log('Video URL test (HEAD request):', videoSrc)
-          } catch (error) {
-            console.warn('Video URL test failed (this is normal for CORS):', error)
-          }
-        }
-        testUrl()
-        
-        // Set a timeout to detect if video never loads (15 seconds)
-        if (loadingTimeoutRef.current) {
-          clearTimeout(loadingTimeoutRef.current)
-        }
-        
-        loadingTimeoutRef.current = setTimeout(() => {
-          console.warn('Video loading timeout after 15 seconds')
-          setVideoError('Video is taking too long to load. This could be a network issue, CORS problem, or the file might be inaccessible. Try opening the URL directly in a new tab.')
-          setIsLoading(false)
-        }, 15000) // 15 second timeout
-        
-        return () => {
-          if (loadingTimeoutRef.current) {
-            clearTimeout(loadingTimeoutRef.current)
-            loadingTimeoutRef.current = null
-          }
-        }
-      }, [video.video_url, videoSrc])
-
       return (
         <Card>
           <CardContent className="p-0">
             <div className="relative aspect-video w-full rounded-lg overflow-hidden bg-black">
             <video
-              ref={(el) => {
+              ref={useCallback((el: HTMLVideoElement | null) => {
+                // Only process if the ref actually changed to prevent infinite loops
+                if (videoRef.current === el) {
+                  return // Ref hasn't changed, skip to prevent infinite loops
+                }
+                
                 videoRef.current = el
+                
                 // Ensure video element never has native controls
                 if (el) {
                   if (el.hasAttribute('controls')) {
@@ -651,35 +670,29 @@ const VideoPlayer = forwardRef<VideoPlayerRef, VideoPlayerProps>(
                   if (el.controls) {
                     el.controls = false
                   }
-                }
-                // Initialize Plyr when video element is mounted
-                // Allow initialization for any status except uploading/processing/transcribing
-                const isProcessing = video.status === 'uploading' || video.status === 'processing' || video.status === 'transcribing'
-                
-                if (el && !plyrRef.current && !isProcessing && !video.youtube_url && video.video_url) {
-                  console.log('Video element mounted, scheduling Plyr init from ref callback')
-                  // Small delay to ensure element is fully in DOM
-                  setTimeout(() => {
-                    if (videoRef.current && !plyrRef.current) {
-                      console.log('Calling initPlyrPlayer from ref callback')
-                      initPlyrPlayer().catch(err => {
-                        console.error('Failed to initialize Plyr from ref:', err)
-                      })
-                    } else {
-                      console.log('Ref callback timeout - videoRef:', !!videoRef.current, 'plyrRef:', !!plyrRef.current)
-                    }
-                  }, 300)
+                  
+                  // Initialize Plyr when video element is mounted
+                  // Allow initialization for any status except uploading/processing/transcribing
+                  const isProcessing = video.status === 'uploading' || video.status === 'processing' || video.status === 'transcribing'
+                  
+                  // Only initialize if Plyr is not already initialized
+                  if (!plyrRef.current && !isProcessing && !video.youtube_url && video.video_url && initPlyrPlayer) {
+                    console.log('Video element mounted, scheduling Plyr init from ref callback')
+                    // Small delay to ensure element is fully in DOM
+                    setTimeout(() => {
+                      if (videoRef.current && !plyrRef.current && initPlyrPlayer) {
+                        console.log('Calling initPlyrPlayer from ref callback')
+                        initPlyrPlayer().catch(err => {
+                          console.error('Failed to initialize Plyr from ref:', err)
+                        })
+                      }
+                    }, 300)
+                  }
                 } else {
-                  console.log('Ref callback skipped:', {
-                    hasEl: !!el,
-                    plyrRefExists: !!plyrRef.current,
-                    status: video.status,
-                    isProcessing,
-                    hasYoutubeUrl: !!video.youtube_url,
-                    hasVideoUrl: !!video.video_url,
-                  })
+                  // Element was unmounted
+                  videoRef.current = null
                 }
-              }}
+              }, [video.status, video.youtube_url, video.video_url, initPlyrPlayer])}
                 className="w-full h-full object-contain"
               playsInline
                 preload="auto"

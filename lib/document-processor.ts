@@ -1,216 +1,59 @@
-import { createServiceClient } from '@/supabase/service'
-import mammoth from 'mammoth'
-import { Readable } from 'stream'
-// @ts-ignore - pdf-parse doesn't have TypeScript definitions
-import pdfParse from 'pdf-parse'
-import { detectLanguage } from './language-detection'
+const SUPABASE_FUNCTION_URL = process.env.SUPABASE_FUNCTION_URL || ''
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || ''
+const DOCUMENT_PROCESSING_SECRET = process.env.DOCUMENT_PROCESSING_SECRET || ''
 
-// Helper to convert buffer to stream
-function bufferToStream(buffer: Buffer) {
-  return Readable.from(buffer)
+if (!SUPABASE_FUNCTION_URL) {
+  console.warn('SUPABASE_FUNCTION_URL is not set. Document processing will fail.')
 }
 
-async function extractPDFText(fileBuffer: Buffer): Promise<{ text: string; pageCount: number }> {
-  // Use pdf-parse for reliable PDF text extraction
-  const data = await pdfParse(fileBuffer)
-    
-    return {
-    text: data.text,
-    pageCount: data.numpages || 1,
+if (!SUPABASE_SERVICE_ROLE_KEY) {
+  console.warn('SUPABASE_SERVICE_ROLE_KEY is not set. Document processing will fail.')
+}
+
+interface ProcessDocumentOptions {
+  waitForCompletion?: boolean
+}
+
+export async function processDocument(
+  documentId: string,
+  options: ProcessDocumentOptions = {}
+) {
+  if (!SUPABASE_FUNCTION_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    throw new Error('Supabase Edge function configuration missing. Check SUPABASE_FUNCTION_URL and SUPABASE_SERVICE_ROLE_KEY.')
   }
-}
 
-async function extractWordText(fileBuffer: Buffer): Promise<{ text: string; pageCount: number }> {
-  const result = await mammoth.extractRawText({ buffer: fileBuffer })
-  // Estimate page count (roughly 500 words per page)
-  const wordCount = result.value.split(/\s+/).length
-  const estimatedPages = Math.ceil(wordCount / 500)
-  return {
-    text: result.value,
-    pageCount: estimatedPages,
+  const payload = {
+    documentId,
+    waitForCompletion: options.waitForCompletion ?? false,
   }
-}
 
-async function extractEPUBText(fileBuffer: Buffer): Promise<{ text: string; pageCount: number }> {
-  // For EPUB, we'll use epub2 library
-  const epub = require('epub2')
-  return new Promise((resolve, reject) => {
-    try {
-      const book = new epub(bufferToStream(fileBuffer))
-      let fullText = ''
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+  }
 
-      book.on('end', () => {
-        // Estimate pages (roughly 500 words per page)
-        const wordCount = fullText.split(/\s+/).filter((w: string) => w.length > 0).length
-        const estimatedPages = Math.max(1, Math.ceil(wordCount / 500))
-        resolve({
-          text: fullText.trim(),
-          pageCount: estimatedPages,
-        })
-      })
+  if (DOCUMENT_PROCESSING_SECRET) {
+    headers['x-process-secret'] = DOCUMENT_PROCESSING_SECRET
+  }
 
-      book.on('error', (err: Error) => {
-        reject(err)
-      })
-
-      book.on('chapter', (chapter: any) => {
-        // Extract text from HTML (simple approach)
-        const text = chapter.body
-          ? chapter.body.replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-          : ''
-        if (text) {
-          fullText += text + '\n\n'
-        }
-      })
-
-      book.parse()
-    } catch (error) {
-      reject(error)
-    }
+  const response = await fetch(`${SUPABASE_FUNCTION_URL}/process-document`, {
+    method: 'POST',
+    headers,
+    body: JSON.stringify(payload),
   })
-}
 
-export async function processDocument(documentId: string) {
+  let data: any = null
   try {
-    const serviceClient = createServiceClient()
-
-    // Get document
-    const { data: document, error: docError } = await serviceClient
-      .from('documents')
-      .select('*')
-      .eq('id', documentId)
-      .single()
-
-    if (docError || !document) {
-      throw new Error('Document not found')
-    }
-
-    if (!document.file_url) {
-      throw new Error('Document file URL not found')
-    }
-
-    // Download file from S3
-    const { extractS3KeyFromUrl, downloadFromS3 } = await import('@/lib/s3')
-    
-    let fileBuffer: Buffer
-    try {
-      const s3Key = extractS3KeyFromUrl(document.file_url)
-      
-      if (!s3Key) {
-        // Fallback to HTTP fetch if URL is not S3/CloudFront (for backwards compatibility)
-        const fileResponse = await fetch(document.file_url)
-        if (!fileResponse.ok) {
-          throw new Error('Failed to download document file')
-        }
-        fileBuffer = Buffer.from(await fileResponse.arrayBuffer())
-      } else {
-        fileBuffer = await downloadFromS3('documents', s3Key)
-      }
-    } catch (downloadError: any) {
-      console.error('Document download error:', downloadError)
-      throw new Error(`Failed to download document: ${downloadError.message || 'Unknown error'}`)
-    }
-
-    // Extract text based on file type
-    let extractedText = ''
-    let pageCount = 0
-
-    try {
-      if (document.file_type === 'pdf') {
-        const result = await extractPDFText(fileBuffer)
-        extractedText = result.text
-        pageCount = result.pageCount
-      } else if (document.file_type === 'docx') {
-        const result = await extractWordText(fileBuffer)
-        extractedText = result.text
-        pageCount = result.pageCount
-      } else if (document.file_type === 'epub') {
-        const result = await extractEPUBText(fileBuffer)
-        extractedText = result.text
-        pageCount = result.pageCount
-      } else {
-        throw new Error(`Unsupported file type: ${document.file_type}`)
-      }
-    } catch (extractError: any) {
-      console.error('Text extraction error:', extractError)
-      await serviceClient
-        .from('documents')
-        .update({ status: 'error' })
-        .eq('id', documentId)
-      
-      throw new Error(`Failed to extract text from document: ${extractError.message}`)
-    }
-
-    if (!extractedText || extractedText.trim().length === 0) {
-      await serviceClient
-        .from('documents')
-        .update({ status: 'error' })
-        .eq('id', documentId)
-      
-      throw new Error('No text could be extracted from the document')
-    }
-
-    // Split text into chunks (for large documents)
-    const chunkSize = 5000 // characters per chunk
-    const chunks: string[] = []
-    for (let i = 0; i < extractedText.length; i += chunkSize) {
-      chunks.push(extractedText.slice(i, i + chunkSize))
-    }
-
-    // Store chunks
-    if (chunks.length > 0) {
-      const chunkInserts = chunks.map((chunk, index) => ({
-        document_id: documentId,
-        chunk_index: index,
-        content: chunk,
-        page_number: document.file_type === 'pdf' ? Math.floor((index / chunks.length) * pageCount) + 1 : null,
-      }))
-
-      // Delete existing chunks
-      await serviceClient
-        .from('document_chunks')
-        .delete()
-        .eq('document_id', documentId)
-
-      // Insert new chunks
-      const { error: chunksError } = await serviceClient
-        .from('document_chunks')
-        .insert(chunkInserts)
-
-      if (chunksError) {
-        console.error('Error inserting chunks:', chunksError)
-      }
-    }
-
-    // Detect language of the extracted text
-    let detectedLanguage = 'en' // Default to English
-    try {
-      detectedLanguage = await detectLanguage(extractedText)
-    } catch (error) {
-      console.error('Error detecting language, defaulting to English:', error)
-    }
-
-    // Update document with extracted text, language, and status
-    await serviceClient
-      .from('documents')
-      .update({
-        extracted_text: extractedText,
-        page_count: pageCount,
-        language: detectedLanguage,
-        status: 'ready',
-      })
-      .eq('id', documentId)
-
-    return {
-      success: true,
-      documentId,
-      textLength: extractedText.length,
-      chunksCount: chunks.length,
-      pageCount,
-    }
-  } catch (error: any) {
-    console.error('Document processing error:', error)
-    throw error
+    data = await response.json()
+  } catch (error) {
+    console.error('Failed to parse process-document response:', error)
   }
+
+  if (!response.ok) {
+    const message = data?.error || 'Failed to trigger document processing'
+    throw new Error(message)
+  }
+
+  return data
 }
 

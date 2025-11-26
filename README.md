@@ -56,6 +56,8 @@ Create a `.env.local` file in the root directory:
 NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
 NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
 SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
+SUPABASE_FUNCTION_URL=https://your-project-id.functions.supabase.co
+DOCUMENT_PROCESSING_SECRET=some-long-random-string
 
 # OpenAI Configuration
 OPENAI_API_KEY=your_openai_api_key
@@ -154,6 +156,11 @@ See `supabase/schema.sql` for the complete schema.
 
 ## Notes
 
+- **Document Text Extraction** now runs inside a Supabase Edge Function (`process-document`). Deploy it with the Supabase CLI:
+  ```bash
+  supabase functions deploy process-document --project-ref your-project-ref --env-file supabase/.env.process-document
+  ```
+  Create `supabase/.env.process-document` (excluded from git) with the AWS, OpenAI, Supabase, and `DOCUMENT_PROCESSING_SECRET` values listed above.
 - **YouTube Transcription**: Uses `ytdl-core` library, but YouTube frequently blocks downloads (403 errors). For reliable transcription, download videos and upload the file directly.
 - **File Storage**: Videos and documents are stored in AWS S3 with CloudFront CDN for fast global delivery
 - **Transcripts**: Automatically chunked into segments with timestamps
