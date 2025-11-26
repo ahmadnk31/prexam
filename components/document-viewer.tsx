@@ -176,13 +176,45 @@ export default function DocumentViewer({
           <CardTitle>Document</CardTitle>
         </CardHeader>
         <CardContent className="flex-1 min-h-0 flex flex-col">
-          <div className="space-y-2">
-            <p className="text-sm text-red-600 font-medium">
-              Error processing document.
-            </p>
-            <p className="text-xs text-gray-600">
-              The document could not be processed. Please try uploading again.
-            </p>
+          <div className="space-y-4 flex flex-col items-center justify-center h-full">
+            <div className="text-center space-y-2">
+              <p className="text-sm text-red-600 font-medium">
+                Error processing document.
+              </p>
+              <p className="text-xs text-gray-600 max-w-md">
+                The document could not be processed. This might be due to:
+              </p>
+              <ul className="text-xs text-gray-600 text-left max-w-md mt-2 space-y-1 list-disc list-inside">
+                <li>File format issues</li>
+                <li>Network connectivity problems</li>
+                <li>Processing service temporarily unavailable</li>
+              </ul>
+            </div>
+            <button
+              onClick={async () => {
+                try {
+                  // Update status to processing
+                  const response = await fetch(`/api/documents/process/extract`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ documentId }),
+                  })
+                  
+                  if (response.ok) {
+                    // Reload the page to show processing state
+                    window.location.reload()
+                  } else {
+                    const error = await response.json()
+                    alert(`Failed to retry: ${error.error || 'Unknown error'}`)
+                  }
+                } catch (error: any) {
+                  alert(`Error: ${error.message || 'Failed to retry processing'}`)
+                }
+              }}
+              className="px-4 py-2 bg-[#4B3F72] text-white rounded-lg hover:bg-[#3d3259] transition-colors text-sm font-medium"
+            >
+              Retry Processing
+            </button>
           </div>
         </CardContent>
       </Card>

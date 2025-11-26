@@ -27,7 +27,7 @@ export async function processDocument(
 
   // Validate URL format
   if (!SUPABASE_FUNCTION_URL.startsWith('http://') && !SUPABASE_FUNCTION_URL.startsWith('https://')) {
-    throw new Error(`Invalid SUPABASE_FUNCTION_URL format. Expected https://{project-ref}.functions.supabase.co, got: ${SUPABASE_FUNCTION_URL}`)
+    throw new Error(`Invalid SUPABASE_FUNCTION_URL format. Expected https://{project-ref}.supabase.co/functions/v1/{function-name} or https://{project-ref}.functions.supabase.co/{function-name}, got: ${SUPABASE_FUNCTION_URL}`)
   }
 
   const payload = {
@@ -44,15 +44,47 @@ export async function processDocument(
     headers['x-process-secret'] = DOCUMENT_PROCESSING_SECRET
   }
 
-  // Ensure URL doesn't have trailing slash
-  const baseUrl = SUPABASE_FUNCTION_URL.replace(/\/$/, '')
-  // Supabase Edge Functions URL format: https://{project-ref}.functions.supabase.co/{function-name}
-  const functionUrl = `${baseUrl}/process-document`
+  // Handle different Supabase Edge Function URL formats:
+  // Format 1: https://{project-ref}.supabase.co/functions/v1/{function-name}
+  // Format 2: https://{project-ref}.functions.supabase.co/{function-name} (old)
+  // The function name IS the endpoint - don't append additional paths
   
-  // Validate the function URL looks correct
-  if (!functionUrl.includes('.functions.supabase.co')) {
-    console.warn('Function URL does not match expected Supabase Edge Functions format:', functionUrl)
+  let functionUrl: string
+  const baseUrl = SUPABASE_FUNCTION_URL.replace(/\/$/, '')
+  
+  // Check if URL already includes a function name
+  if (baseUrl.includes('/functions/v1/')) {
+    const afterV1 = baseUrl.split('/functions/v1/')[1]
+    if (afterV1 && afterV1.trim().length > 0) {
+      // URL already includes function name - use as-is
+      // The function name (e.g., "process-document" or "smart-task") is the endpoint
+      functionUrl = baseUrl
+    } else {
+      // Just /functions/v1/, need to add function name
+      functionUrl = `${baseUrl}/process-document`
+    }
+  } else if (baseUrl.includes('.functions.supabase.co')) {
+    // Old format: https://{project-ref}.functions.supabase.co
+    // Check if it already has a function name
+    const afterDomain = baseUrl.split('.functions.supabase.co/')[1]
+    if (afterDomain && afterDomain.trim().length > 0) {
+      functionUrl = baseUrl
+    } else {
+      functionUrl = `${baseUrl}/process-document`
+    }
+  } else if (baseUrl.includes('.supabase.co')) {
+    // New format base: https://{project-ref}.supabase.co
+    functionUrl = `${baseUrl}/functions/v1/process-document`
+  } else {
+    // Unknown format, try appending
+    functionUrl = `${baseUrl}/process-document`
   }
+  
+  console.log('Constructed function URL:', {
+    original: SUPABASE_FUNCTION_URL,
+    baseUrl,
+    functionUrl,
+  })
 
   console.log('Invoking Supabase Edge function:', {
     url: functionUrl,

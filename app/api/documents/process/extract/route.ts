@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { processDocument } from '@/lib/document-processor'
+import { createServiceClient } from '@/supabase/service'
 
 export async function POST(req: NextRequest) {
   try {
@@ -9,13 +10,49 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Document ID is required' }, { status: 400 })
     }
 
-    const result = await processDocument(documentId, { waitForCompletion: true })
+    const serviceClient = createServiceClient()
 
-    return NextResponse.json(result)
+    // Update status to processing before starting
+    await serviceClient
+      .from('documents')
+      .update({ status: 'processing' })
+      .eq('id', documentId)
+
+    console.log('Starting document processing (retry):', documentId)
+
+    try {
+      const result = await processDocument(documentId, { waitForCompletion: true })
+      console.log('Document processing completed:', result)
+      return NextResponse.json(result)
+    } catch (processingError: any) {
+      console.error('Document processing failed:', {
+        documentId,
+        error: processingError.message,
+        stack: processingError.stack,
+      })
+
+      // Update status to error
+      await serviceClient
+        .from('documents')
+        .update({ status: 'error' })
+        .eq('id', documentId)
+
+      return NextResponse.json(
+        { 
+          error: 'Failed to process document',
+          message: processingError.message || 'Unknown error',
+          details: 'Check server logs for more information'
+        },
+        { status: 500 }
+      )
+    }
   } catch (error: any) {
-    console.error('Document processing error:', error)
+    console.error('Document processing route error:', error)
     return NextResponse.json(
-      { error: error.message || 'Failed to process document' },
+      { 
+        error: 'Failed to process document',
+        message: error.message || 'Unknown error'
+      },
       { status: 500 }
     )
   }
