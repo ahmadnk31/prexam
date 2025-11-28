@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/supabase/server'
 import { createServiceClient } from '@/supabase/service'
 import { uploadToS3, getPublicUrl } from '@/lib/s3'
-import { processDocument } from '@/lib/document-processor'
+import { processDocumentAction } from '@/lib/process-document'
 
 // Configure for large file uploads
 export const runtime = 'nodejs'
@@ -159,19 +159,26 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Trigger Supabase Edge Function to process text
-    // Process in background (don't await to return quickly to user)
-    // The Edge Function has retry logic to handle files that aren't immediately available
-    console.log('Triggering Edge Function for document processing:', {
+    // Process document text extraction in background (Server Action with Node.js runtime)
+    // This uses pdf-parse, mammoth, and epub2 which work properly in Node.js runtime
+    console.log('Triggering document processing (Server Action):', {
       documentId: document.id,
       fileUrl: document.file_url,
     })
     
-    processDocument(document.id, { waitForCompletion: false })
+    // Process in background - don't await to return quickly to user
+    // Add a small delay for S3 eventual consistency
+    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+    
+    delay(1000).then(() => {
+      return processDocumentAction(document.id)
+    })
       .then((result) => {
-        console.log('Document processed successfully by Edge function:', {
+        console.log('Document processed successfully:', {
           documentId: result.documentId,
           success: result.success,
+          textLength: result.textLength,
+          chunksCount: result.chunksCount,
         })
       })
       .catch((error) => {
@@ -180,14 +187,7 @@ export async function POST(req: NextRequest) {
           error: error.message,
           stack: error.stack,
         })
-        // Update document status to error if processing fails
-        serviceClient
-          .from('documents')
-          .update({ status: 'error' })
-          .eq('id', document.id)
-          .catch((updateError) => {
-            console.error('Failed to update document status:', updateError)
-          })
+        // Status is already updated to error in the Server Action
       })
 
     return NextResponse.json({ documentId: document.id })

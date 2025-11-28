@@ -25,7 +25,8 @@ export default function SignupPage() {
     setError(null)
 
     try {
-      const { data, error } = await supabase.auth.signUp({
+      // Add timeout to prevent hanging on slow SMTP
+      const signupPromise = supabase.auth.signUp({
         email,
         password,
         options: {
@@ -35,58 +36,79 @@ export default function SignupPage() {
         },
       })
 
+      // Add a timeout wrapper (30 seconds)
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Signup request timed out. Please check your SMTP configuration in Supabase Dashboard.')), 30000)
+      )
+
+      const { data, error } = await Promise.race([signupPromise, timeoutPromise]) as any
+
       if (error) throw error
 
       // Profile is automatically created by database trigger
-      // But we can update it with the full_name if provided
+      // Update profile and send email asynchronously (non-blocking)
       if (data.user) {
-        try {
-          // Try to update profile if it exists (created by trigger)
-          // This is non-blocking - if it fails, the trigger will have created a basic profile
-          const { error: profileError } = await supabase
-            .from('profiles')
-            .update({ full_name: fullName })
-            .eq('id', data.user.id)
-
-          if (profileError) {
-            // If update fails, try to create it (fallback if trigger didn't work)
-            const { error: createError } = await supabase
+        // Make profile update and email truly non-blocking
+        Promise.resolve().then(async () => {
+          try {
+            // Try to update profile if it exists (created by trigger)
+            // This is non-blocking - if it fails, the trigger will have created a basic profile
+            const { error: profileError } = await supabase
               .from('profiles')
-              .insert({
-                id: data.user.id,
-                email: data.user.email,
-                full_name: fullName,
+              .update({ full_name: fullName })
+              .eq('id', data.user.id)
+
+            if (profileError) {
+              // If update fails, try to create it (fallback if trigger didn't work)
+              const { error: createError } = await supabase
+                .from('profiles')
+                .insert({
+                  id: data.user.id,
+                  email: data.user.email,
+                  full_name: fullName,
+                })
+
+              if (createError) {
+                // Log but don't block - profile can be created later
+                console.warn('Profile creation/update failed:', createError)
+              }
+            }
+
+            // Send welcome email and verification email (non-blocking, fire-and-forget)
+            if (data.user.email) {
+              // Send welcome email
+              fetch('/api/email/send', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  type: 'welcome',
+                  to: data.user.email,
+                  userName: fullName || data.user.email.split('@')[0],
+                  loginUrl: `${window.location.origin}/dashboard/library`,
+                }),
+              }).catch((emailError) => {
+                // Log but don't block signup
+                console.warn('Failed to send welcome email:', emailError)
               })
 
-            if (createError) {
-              // Log but don't block - profile can be created later
-              console.warn('Profile creation/update failed:', createError)
+              // Send verification email immediately (user is now logged in)
+              fetch('/api/auth/send-verification', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email: data.user.email }),
+              }).catch((verifyError) => {
+                console.warn('Failed to send verification email:', verifyError)
+              })
             }
+          } catch (error) {
+            // Log but don't block signup
+            console.warn('Profile/email update error:', error)
           }
-
-          // Send welcome email (non-blocking)
-          if (data.user.email) {
-            fetch('/api/email/send', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                type: 'welcome',
-                to: data.user.email,
-                userName: fullName || data.user.email.split('@')[0],
-                loginUrl: `${window.location.origin}/dashboard/library`,
-              }),
-            }).catch((emailError) => {
-              // Log but don't block signup
-              console.warn('Failed to send welcome email:', emailError)
-            })
-          }
-        } catch (profileError) {
-          // Log but don't block signup
-          console.warn('Profile update error:', profileError)
-        }
+        })
       }
 
-      router.push('/dashboard/library')
+      // Redirect to verification page instead of dashboard
+      router.push('/verify-email?message=Please verify your email address to continue')
       router.refresh()
     } catch (error: any) {
       setError(error.message || 'An error occurred')

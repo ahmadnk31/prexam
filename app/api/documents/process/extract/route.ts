@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { processDocument } from '@/lib/document-processor'
+import { processDocumentAction } from '@/lib/process-document'
 import { createServiceClient } from '@/supabase/service'
+
+export const runtime = 'nodejs'
+export const maxDuration = 300 // 5 minutes for large documents
 
 export async function POST(req: NextRequest) {
   try {
@@ -21,7 +24,7 @@ export async function POST(req: NextRequest) {
     console.log('Starting document processing (retry):', documentId)
 
     try {
-      const result = await processDocument(documentId, { waitForCompletion: true })
+      const result = await processDocumentAction(documentId)
       console.log('Document processing completed:', result)
       return NextResponse.json(result)
     } catch (processingError: any) {

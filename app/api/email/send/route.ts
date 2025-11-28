@@ -2,17 +2,11 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/supabase/server'
 import { sendEmail, sendWelcomeEmail, sendPasswordResetEmail } from '@/lib/email'
 
+export const runtime = 'nodejs'
+export const maxDuration = 30 // 30 seconds timeout
+
 export async function POST(req: NextRequest) {
   try {
-    const supabase = await createClient()
-    const {
-      data: { user },
-    } = await supabase.auth.getUser()
-
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
     const body = await req.json()
     const { type, to, ...options } = body
 
@@ -22,6 +16,19 @@ export async function POST(req: NextRequest) {
         { error: 'Type and recipient email are required' },
         { status: 400 }
       )
+    }
+
+    // For welcome emails during signup, we don't require authentication
+    // Other email types still require authentication
+    if (type !== 'welcome') {
+      const supabase = await createClient()
+      const {
+        data: { user },
+      } = await supabase.auth.getUser()
+
+      if (!user) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+      }
     }
 
     let result

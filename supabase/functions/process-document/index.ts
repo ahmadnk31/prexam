@@ -121,20 +121,39 @@ if (typeof globalThis.DOMParser === 'undefined') {
   } as any
 }
 
-// Lazy load pdf-parse as it's a CommonJS module
-let pdfParseModule: any = null
+// Lazy load pdfjs-dist - a Deno-compatible PDF library
+let pdfjsLib: any = null
 
-async function getPdfParse() {
-  if (!pdfParseModule) {
-    const imported = await import('npm:pdf-parse')
-    // pdf-parse is CommonJS, so it might be in default or as a namespace
-    pdfParseModule = imported.default || imported
-    // If it's still a module object, try accessing the function directly
-    if (typeof pdfParseModule !== 'function' && pdfParseModule.default) {
-      pdfParseModule = pdfParseModule.default
+async function getPdfJs() {
+  if (!pdfjsLib) {
+    try {
+      console.log('Loading pdfjs-dist...')
+      // Import pdfjs-dist standard build
+      const pdfjsModule = await import('npm:pdfjs-dist@4.0.379/build/pdf.mjs')
+      
+      // pdfjs-dist exports getDocument from the module
+      pdfjsLib = pdfjsModule
+      
+      // Configure worker source - use jsDelivr CDN which should work in Edge Functions
+      if (pdfjsLib.GlobalWorkerOptions) {
+        // Use the minified worker from CDN
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 
+          'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.0.379/build/pdf.worker.min.mjs'
+        console.log('Worker source configured:', pdfjsLib.GlobalWorkerOptions.workerSrc)
+      } else {
+        console.warn('GlobalWorkerOptions not found in pdfjs-dist module')
+      }
+      
+      console.log('pdfjs-dist loaded successfully')
+    } catch (error: any) {
+      console.error('Error loading pdfjs-dist:', {
+        message: error.message,
+        stack: error.stack,
+      })
+      throw new Error(`Failed to load pdfjs-dist: ${error.message}`)
     }
   }
-  return pdfParseModule
+  return pdfjsLib
 }
 
 // Lazy load mammoth and epub after polyfills are set up
@@ -310,11 +329,60 @@ async function downloadFromS3(s3Key: string): Promise<Buffer> {
 }
 
 async function extractPDFText(fileBuffer: Buffer) {
-  const pdfParse = await getPdfParse()
-  const data = await pdfParse(fileBuffer)
-  return {
-    text: data.text,
-    pageCount: data.numpages || 1,
+  try {
+    const pdfjs = await getPdfJs()
+    
+    console.log('Loading PDF with pdfjs-dist, buffer size:', fileBuffer.length)
+    
+    // Convert Buffer to Uint8Array for pdfjs-dist
+    const uint8Array = new Uint8Array(fileBuffer)
+    
+    // Get getDocument function - it might be in different locations
+    const getDocument = pdfjs.getDocument || pdfjs.default?.getDocument || (pdfjs as any).getDocument
+    
+    if (!getDocument || typeof getDocument !== 'function') {
+      console.error('getDocument not found in pdfjs-dist:', {
+        keys: Object.keys(pdfjs),
+        hasDefault: !!pdfjs.default,
+        defaultKeys: pdfjs.default ? Object.keys(pdfjs.default) : null,
+      })
+      throw new Error('getDocument function not found in pdfjs-dist')
+    }
+    
+    // Load the PDF document
+    const loadingTask = getDocument({ data: uint8Array })
+    const pdfDocument = await loadingTask.promise
+    const numPages = pdfDocument.numPages
+    
+    console.log('PDF loaded, pages:', numPages)
+    
+    // Extract text from all pages
+    let fullText = ''
+    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+      const page = await pdfDocument.getPage(pageNum)
+      const textContent = await page.getTextContent()
+      
+      // Combine text items from the page
+      const pageText = textContent.items
+        .map((item: any) => item.str)
+        .join(' ')
+      
+      fullText += pageText + '\n\n'
+    }
+    
+    console.log('PDF text extraction completed, text length:', fullText.length)
+    
+    return {
+      text: fullText.trim(),
+      pageCount: numPages,
+    }
+  } catch (error: any) {
+    console.error('extractPDFText error:', {
+      error: error.message,
+      stack: error.stack,
+      bufferSize: fileBuffer.length,
+    })
+    throw error
   }
 }
 
@@ -638,98 +706,185 @@ if (typeof Deno !== 'undefined') {
 
 serve(async (req) => {
   const requestId = crypto.randomUUID()
-  console.log('Edge function invoked:', {
-    requestId,
-    method: req.method,
-    url: req.url,
-    timestamp: new Date().toISOString(),
-  })
-
-  if (DOCUMENT_PROCESSING_SECRET) {
-    const providedSecret = req.headers.get('x-process-secret')
-    if (providedSecret !== DOCUMENT_PROCESSING_SECRET) {
-      console.error('Unauthorized: secret mismatch')
-      return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
-    }
-  }
-
-  if (req.method !== 'POST') {
-    console.error('Method not allowed:', req.method)
-    return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
-  }
-
+  let documentId: string | undefined
+  
   try {
-    const body = await req.json()
-    console.log('Request body:', body)
-    const { documentId, waitForCompletion = false } = body
+    console.log('Edge function invoked:', {
+      requestId,
+      method: req.method,
+      url: req.url,
+      timestamp: new Date().toISOString(),
+    })
 
-    if (!documentId) {
-      return new Response(JSON.stringify({ error: 'documentId is required' }), { status: 400 })
+    // Health check endpoint
+    if (req.method === 'GET' && new URL(req.url).pathname.endsWith('/health')) {
+      return new Response(JSON.stringify({ status: 'ok', timestamp: new Date().toISOString() }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
     }
 
-    // Always wait for completion to ensure processing finishes
-    // Supabase Edge Functions may terminate background tasks after response is sent
-    console.log('Starting document processing, waitForCompletion:', waitForCompletion)
-    const startTime = Date.now()
-    
+    if (DOCUMENT_PROCESSING_SECRET) {
+      const providedSecret = req.headers.get('x-process-secret')
+      if (providedSecret !== DOCUMENT_PROCESSING_SECRET) {
+        console.error('Unauthorized: secret mismatch')
+        return new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })
+      }
+    }
+
+    if (req.method !== 'POST') {
+      console.error('Method not allowed:', req.method)
+      return new Response(JSON.stringify({ error: 'Method not allowed' }), { status: 405 })
+    }
+
+    let body: any
     try {
-      const result = await processDocument(documentId)
-      const processingTime = Date.now() - startTime
-      console.log('Document processing finished:', {
-        documentId: result.documentId,
-        processingTimeMs: processingTime,
-        textLength: result.textLength,
-        chunksCount: result.chunksCount,
-      })
+      const bodyText = await req.text()
+      console.log('Request body text:', bodyText)
+      body = JSON.parse(bodyText)
+      console.log('Request body parsed:', body)
+    } catch (parseError: any) {
+      console.error('Failed to parse request body:', parseError)
+      return new Response(
+        JSON.stringify({ error: 'Invalid JSON in request body', details: parseError.message }),
+        { status: 400 }
+      )
+    }
+
+    try {
+      const { documentId: bodyDocumentId, waitForCompletion = false } = body || {}
+      documentId = bodyDocumentId
+
+      if (!documentId) {
+        console.error('Missing documentId in request body')
+        return new Response(JSON.stringify({ error: 'documentId is required' }), { status: 400 })
+      }
+
+      // Always wait for completion to ensure processing finishes
+      // Supabase Edge Functions may terminate background tasks after response is sent
+      console.log('Starting document processing, waitForCompletion:', waitForCompletion)
+      const startTime = Date.now()
       
-      if (waitForCompletion) {
-        return new Response(JSON.stringify(result), { status: 200 })
-      } else {
-        // Return success immediately, processing is complete
+      try {
+        const result = await processDocument(documentId)
+        const processingTime = Date.now() - startTime
+        console.log('Document processing finished:', {
+          documentId: result.documentId,
+          processingTimeMs: processingTime,
+          textLength: result.textLength,
+          chunksCount: result.chunksCount,
+        })
+        
+        if (waitForCompletion) {
+          return new Response(JSON.stringify(result), { status: 200 })
+        } else {
+          // Return success immediately, processing is complete
+          return new Response(
+            JSON.stringify({
+              success: true,
+              queued: false,
+              completed: true,
+              documentId: result.documentId,
+              message: 'Document processing completed',
+            }),
+            { status: 200 }
+          )
+        }
+      } catch (error: any) {
+        const processingTime = Date.now() - startTime
+        console.error('Document processing failed after', processingTime, 'ms:', {
+          documentId,
+          error: error.message,
+          stack: error.stack,
+          processingTimeMs: processingTime,
+        })
+        
+        // Update document status to error
+        try {
+          await supabase
+            .from('documents')
+            .update({ status: 'error' })
+            .eq('id', documentId)
+        } catch (updateError: any) {
+          console.error('Failed to update document status to error:', updateError)
+        }
+        
         return new Response(
           JSON.stringify({
-            success: true,
-            queued: false,
-            completed: true,
-            documentId: result.documentId,
-            message: 'Document processing completed',
+            error: 'Failed to process document',
+            message: error.message || 'Unknown error',
+            documentId,
           }),
-          { status: 200 }
+          { status: 500 }
         )
       }
     } catch (error: any) {
-      const processingTime = Date.now() - startTime
-      console.error('Document processing failed after', processingTime, 'ms:', {
-        documentId,
-        error: error.message,
+      console.error('Process document function error:', {
+        message: error.message,
         stack: error.stack,
-        processingTimeMs: processingTime,
+        name: error.name,
+        cause: error.cause,
+        documentId,
       })
       
-      // Update document status to error
-      try {
-        await supabase
-          .from('documents')
-          .update({ status: 'error' })
-          .eq('id', documentId)
-      } catch (updateError: any) {
-        console.error('Failed to update document status to error:', updateError)
+      // Try to update document status to error if we have a documentId
+      if (documentId) {
+        try {
+          await supabase
+            .from('documents')
+            .update({ status: 'error' })
+            .eq('id', documentId)
+          console.log('Document status updated to error')
+        } catch (updateError: any) {
+          console.error('Failed to update document status to error:', updateError)
+        }
       }
       
       return new Response(
         JSON.stringify({
           error: 'Failed to process document',
           message: error.message || 'Unknown error',
-          documentId,
+          documentId: documentId || undefined,
+          details: process.env.NODE_ENV === 'development' ? error.stack : undefined,
         }),
-        { status: 500 }
+        {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' },
+        }
       )
     }
-  } catch (error: any) {
-    console.error('Process document function error:', error)
-    return new Response(JSON.stringify({ error: error.message || 'Failed to process document' }), {
-      status: 500,
+  } catch (outerError: any) {
+    // Catch any errors that occur outside the main try-catch (e.g., during initialization)
+    console.error('Fatal error in Edge Function:', {
+      message: outerError.message,
+      stack: outerError.stack,
+      name: outerError.name,
+      requestId,
     })
+    
+    // Try to update document status if we have it
+    if (documentId) {
+      try {
+        await supabase
+          .from('documents')
+          .update({ status: 'error' })
+          .eq('id', documentId)
+      } catch (updateError: any) {
+        console.error('Failed to update document status:', updateError)
+      }
+    }
+    
+    return new Response(
+      JSON.stringify({
+        error: 'Fatal error in Edge Function',
+        message: outerError.message || 'Unknown error',
+        documentId: documentId || undefined,
+      }),
+      {
+        status: 500,
+        headers: { 'Content-Type': 'application/json' },
+      }
+    )
   }
 })
 

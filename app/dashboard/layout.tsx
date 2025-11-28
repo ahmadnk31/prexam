@@ -1,5 +1,5 @@
 import { createClient } from '@/supabase/server'
-import { redirect } from 'next/navigation'
+import { requireVerifiedEmail } from '@/lib/auth-helpers'
 import Link from 'next/link'
 import { Analytics } from "@vercel/analytics/next"
 import { Button } from '@/components/ui/button'
@@ -27,23 +27,18 @@ export default async function DashboardLayout({
 }: {
   children: React.ReactNode
 }) {
+  // Require authenticated and verified email - redirects if not
+  const { user, profile } = await requireVerifiedEmail()
+
+  // Get full profile data for display
   const supabase = await createClient()
-  const {
-    data: { user },
-  } = await supabase.auth.getUser()
-
-  if (!user) {
-    redirect('/login')
-  }
-
-  // Get user profile
-  const { data: profile } = await supabase
+  const { data: fullProfile } = await supabase
     .from('profiles')
     .select('full_name, email')
     .eq('id', user.id)
     .single()
 
-  const displayName = profile?.full_name || user.email?.split('@')[0] || 'User'
+  const displayName = fullProfile?.full_name || user.email?.split('@')[0] || 'User'
 
   return (
     <div className="min-h-screen gradient-outseta-subtle">

@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS public.profiles (
   email TEXT,
   full_name TEXT,
   avatar_url TEXT,
+  email_verified BOOLEAN DEFAULT false,
   created_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL,
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT TIMEZONE('utc'::text, NOW()) NOT NULL
 );
@@ -214,6 +215,7 @@ CREATE INDEX IF NOT EXISTS idx_document_questions_document_id ON public.document
 CREATE INDEX IF NOT EXISTS idx_document_questions_user_id ON public.document_questions(user_id);
 CREATE INDEX IF NOT EXISTS idx_document_notes_document_id ON public.document_notes(document_id);
 CREATE INDEX IF NOT EXISTS idx_document_notes_user_id ON public.document_notes(user_id);
+CREATE INDEX IF NOT EXISTS idx_profiles_email_verified ON public.profiles(email_verified);
 
 -- Row Level Security (RLS) Policies
 
@@ -236,6 +238,14 @@ ALTER TABLE public.document_notes ENABLE ROW LEVEL SECURITY;
 DROP POLICY IF EXISTS "Users can view own profile" ON public.profiles;
 CREATE POLICY "Users can view own profile" ON public.profiles
   FOR SELECT USING (auth.uid() = id);
+
+DROP POLICY IF EXISTS "Users can insert own profile" ON public.profiles;
+CREATE POLICY "Users can insert own profile" ON public.profiles
+  FOR INSERT WITH CHECK (auth.uid() = id);
+
+DROP POLICY IF EXISTS "Service role can insert profiles" ON public.profiles;
+CREATE POLICY "Service role can insert profiles" ON public.profiles
+  FOR INSERT WITH CHECK (true);
 
 DROP POLICY IF EXISTS "Users can update own profile" ON public.profiles;
 CREATE POLICY "Users can update own profile" ON public.profiles
@@ -486,15 +496,50 @@ CREATE TRIGGER update_document_notes_updated_at BEFORE UPDATE ON public.document
 CREATE OR REPLACE FUNCTION public.handle_new_user()
 RETURNS TRIGGER AS $$
 BEGIN
-  INSERT INTO public.profiles (id, email, full_name)
+  -- Use ON CONFLICT to handle race conditions gracefully
+  INSERT INTO public.profiles (id, email, full_name, email_verified)
   VALUES (
     NEW.id,
     NEW.email,
-    COALESCE(NEW.raw_user_meta_data->>'full_name', '')
-  );
+    COALESCE(NEW.raw_user_meta_data->>'full_name', ''),
+    COALESCE(NEW.email_confirmed_at IS NOT NULL, false)
+  )
+  ON CONFLICT (id) DO UPDATE SET
+    email = EXCLUDED.email,
+    full_name = COALESCE(EXCLUDED.full_name, profiles.full_name),
+    email_verified = COALESCE(NEW.email_confirmed_at IS NOT NULL, profiles.email_verified);
+  
+  RETURN NEW;
+EXCEPTION
+  WHEN others THEN
+    -- Log error but don't block signup
+    RAISE WARNING 'Error creating profile for user %: %', NEW.id, SQLERRM;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Function to sync email_verified when user email is confirmed
+CREATE OR REPLACE FUNCTION public.sync_email_verified()
+RETURNS TRIGGER AS $$
+BEGIN
+  -- Update profiles.email_verified when auth.users.email_confirmed_at changes
+  IF NEW.email_confirmed_at IS NOT NULL AND (OLD.email_confirmed_at IS NULL OR OLD.email_confirmed_at IS DISTINCT FROM NEW.email_confirmed_at) THEN
+    UPDATE public.profiles
+    SET email_verified = true
+    WHERE id = NEW.id;
+  END IF;
+  
   RETURN NEW;
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- Trigger to sync email_verified on auth.users update
+DROP TRIGGER IF EXISTS sync_email_verified_trigger ON auth.users;
+CREATE TRIGGER sync_email_verified_trigger
+  AFTER UPDATE OF email_confirmed_at ON auth.users
+  FOR EACH ROW
+  WHEN (NEW.email_confirmed_at IS NOT NULL)
+  EXECUTE FUNCTION public.sync_email_verified();
 
 -- Trigger to create profile on user signup
 DROP TRIGGER IF EXISTS on_auth_user_created ON auth.users;
