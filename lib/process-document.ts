@@ -106,32 +106,62 @@ export async function processDocumentAction(documentId: string) {
         console.log('Extracting text from PDF using pdfjs-dist...', {
           bufferSize: fileBuffer.length,
           fileType: document.file_type,
+          workerSrc: pdfjsLib.GlobalWorkerOptions.workerSrc,
         })
         
         // Convert Buffer to Uint8Array (pdfjs-dist requires Uint8Array, not Buffer)
         const uint8Array = new Uint8Array(fileBuffer)
+        console.log('Converted to Uint8Array, length:', uint8Array.length)
         
         // Use pdfjs-dist to extract text
-        const loadingTask = pdfjsLib.getDocument({ data: uint8Array })
+        console.log('Calling pdfjsLib.getDocument...')
+        const loadingTask = pdfjsLib.getDocument({ 
+          data: uint8Array,
+          verbosity: 0, // Reduce logging
+        })
+        
+        console.log('Waiting for PDF document to load...')
         const pdfDocument = await loadingTask.promise
         pageCount = pdfDocument.numPages
-        console.log('PDF loaded, pages:', pageCount)
+        console.log('PDF loaded successfully, pages:', pageCount)
         
         let fullText = ''
         for (let i = 1; i <= pageCount; i++) {
-          const page = await pdfDocument.getPage(i)
-          const textContent = await page.getTextContent()
-          const pageText = textContent.items
-            .map((item: any) => item.str)
-            .join(' ')
-          fullText += pageText + '\n'
+          console.log(`Extracting text from page ${i}/${pageCount}...`)
+          try {
+            const page = await pdfDocument.getPage(i)
+            const textContent = await page.getTextContent()
+            console.log(`Page ${i} text items count:`, textContent.items.length)
+            
+            const pageText = textContent.items
+              .map((item: any) => {
+                // Handle different item types
+                if (typeof item === 'string') return item
+                if (item && typeof item.str === 'string') return item.str
+                if (item && item.text) return item.text
+                return ''
+              })
+              .filter((text: string) => text.length > 0)
+              .join(' ')
+            
+            console.log(`Page ${i} extracted text length:`, pageText.length)
+            fullText += pageText + '\n'
+          } catch (pageError: any) {
+            console.error(`Error extracting text from page ${i}:`, pageError.message)
+            // Continue with other pages
+          }
         }
         
         extractedText = fullText.trim()
-        console.log('PDF text extracted, pages:', pageCount, 'text length:', extractedText.length)
+        console.log('PDF text extraction completed:', {
+          pages: pageCount,
+          textLength: extractedText.length,
+          first100Chars: extractedText.substring(0, 100),
+        })
         
         if (!extractedText || extractedText.trim().length === 0) {
           console.warn('PDF extraction returned empty text, but no error was thrown')
+          console.warn('This might indicate the PDF has no extractable text (e.g., scanned images)')
         }
       } else if (document.file_type === 'docx') {
         console.log('Extracting text from DOCX...', {
