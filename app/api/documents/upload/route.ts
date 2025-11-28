@@ -90,7 +90,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Upload file to S3
-    let documentPublicUrl: string
+    let documentPublicUrl: string = ''
     try {
       // Validate S3 configuration before attempting upload
       const s3Bucket = process.env.AWS_S3_BUCKET
@@ -142,13 +142,14 @@ export async function POST(req: NextRequest) {
       })
       
       // Update document status to error
-      await serviceClient
-        .from('documents')
-        .update({ status: 'error' })
-        .eq('id', document.id)
-        .catch((updateError) => {
-          console.error('Failed to update document status to error:', updateError)
-        })
+      try {
+        await serviceClient
+          .from('documents')
+          .update({ status: 'error' })
+          .eq('id', document.id)
+      } catch (updateError: any) {
+        console.error('Failed to update document status to error:', updateError)
+      }
 
       return NextResponse.json(
         { 
@@ -162,6 +163,14 @@ export async function POST(req: NextRequest) {
 
     // Process document text extraction in background (Node.js runtime)
     // This uses pdf-parse, mammoth, and epub2 which work properly in Node.js runtime
+    if (!documentPublicUrl) {
+      console.error('Document public URL is missing, cannot process document')
+      return NextResponse.json(
+        { error: 'Failed to get document URL' },
+        { status: 500 }
+      )
+    }
+    
     console.log('Triggering document processing:', {
       documentId: document.id,
       fileUrl: documentPublicUrl,
