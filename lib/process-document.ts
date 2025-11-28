@@ -1,13 +1,31 @@
 import { createServiceClient } from '@/supabase/service'
 import { createClient } from '@/supabase/server'
-import { openai } from '@/lib/openai'
+// Use legacy build for Node.js - it includes necessary polyfills
+// Use legacy build for Node.js - it includes necessary polyfills and doesn't require DOMMatrix
+// @ts-ignore - legacy build path may not have complete types
+import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
+import mammoth from 'mammoth'
+import { Book } from 'epubjs'
 import { Buffer } from 'buffer'
+import { writeFile, unlink } from 'fs/promises'
+import { join } from 'path'
+import { tmpdir } from 'os'
 
 /**
- * Process a document: download, extract text using OpenAI, chunk, and detect language
- * Uses OpenAI's API to extract text from documents
+ * Process a document: download, extract text, chunk, and detect language
+ * This runs in Node.js runtime using pdfjs-dist legacy build and epubjs (pure JavaScript libraries)
  * Called from route handlers that have `export const runtime = 'nodejs'`
  */
+
+// Configure pdfjs-dist worker for Node.js
+if (typeof window === 'undefined') {
+  // For Node.js, use local worker file from node_modules
+  // Use file:// URL pointing to the worker in node_modules
+  const path = require('path')
+  const workerPath = path.join(process.cwd(), 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.min.mjs')
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `file://${workerPath}`
+}
+
 export async function processDocumentAction(documentId: string) {
   const serviceClient = createServiceClient()
   const supabase = await createClient()
@@ -76,130 +94,139 @@ export async function processDocumentAction(documentId: string) {
       throw new Error(`Failed to download document: ${downloadError.message || 'Unknown error'}`)
     }
 
-    // Extract text using OpenAI
-    // For now, we'll use OpenAI to process the document by uploading it and asking for text extraction
+    // Extract text based on file type
     let extractedText = ''
     let pageCount = 0
 
     try {
-      console.log('Extracting text using OpenAI...', {
-        bufferSize: fileBuffer.length,
-        fileType: document.file_type,
-      })
-
-      // Determine file extension and MIME type
-      let fileExtension = document.file_type
-      let mimeType = 'application/pdf'
-      if (document.file_type === 'docx') {
-        mimeType = 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
-      } else if (document.file_type === 'epub') {
-        mimeType = 'application/epub+zip'
-      }
-
-      const OPENAI_API_KEY = process.env.OPENAI_API_KEY
-      if (!OPENAI_API_KEY) {
-        throw new Error('OPENAI_API_KEY is not set')
-      }
-
-      // Upload file to OpenAI using FormData
-      console.log('Uploading file to OpenAI...')
-      const formData = new FormData()
-      // Convert Buffer to Uint8Array for FormData
-      const uint8Array = new Uint8Array(fileBuffer)
-      const fileBlob = new Blob([uint8Array], { type: mimeType })
-      formData.append('file', fileBlob, `document.${fileExtension}`)
-      formData.append('purpose', 'assistants')
-
-      const uploadResponse = await fetch('https://api.openai.com/v1/files', {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${OPENAI_API_KEY}`,
-        },
-        body: formData,
-      })
-
-      if (!uploadResponse.ok) {
-        const errorText = await uploadResponse.text()
-        console.error('OpenAI file upload error:', errorText)
-        throw new Error(`Failed to upload file to OpenAI: ${uploadResponse.status} ${uploadResponse.statusText}`)
-      }
-
-      const uploadData = await uploadResponse.json()
-      const fileId = uploadData.id
-      console.log('File uploaded to OpenAI, file ID:', fileId)
-
-      // Use OpenAI Assistants API to extract text
-      // Create a temporary assistant
-      const assistant = await openai.beta.assistants.create({
-        model: 'gpt-4o',
-        instructions: 'You are a document text extraction assistant. Extract all text from the provided document. Preserve structure, paragraphs, and formatting. Return only the extracted text, no additional commentary or explanations.',
-        tools: [{ type: 'code_interpreter' }],
-      })
-
-      // Create a thread and add the file
-      const thread = await openai.beta.threads.create({
-        messages: [
-          {
-            role: 'user',
-            content: 'Please extract all text from this document. Return the complete text content, preserving the original structure and formatting as much as possible.',
-            attachments: [
-              {
-                file_id: fileId,
-                tools: [{ type: 'code_interpreter' }],
-              },
-            ],
-          },
-        ],
-      })
-
-      // Run the assistant
-      const run = await openai.beta.threads.runs.create(thread.id, {
-        assistant_id: assistant.id,
-      })
-
-      // Wait for completion - poll until done
-      let runStatus
-      let attempts = 0
-      const maxAttempts = 120 // 2 minutes max
-      do {
-        await new Promise(resolve => setTimeout(resolve, 1000))
-        // @ts-ignore - OpenAI SDK type definitions may be incorrect
-        runStatus = await openai.beta.threads.runs.retrieve(thread.id, run.id)
-        attempts++
-        if (attempts > maxAttempts) {
-          throw new Error('OpenAI assistant run timed out')
+      if (document.file_type === 'pdf') {
+        console.log('Extracting text from PDF using pdfjs-dist...', {
+          bufferSize: fileBuffer.length,
+          fileType: document.file_type,
+        })
+        
+        // Convert Buffer to Uint8Array (pdfjs-dist requires Uint8Array, not Buffer)
+        const uint8Array = new Uint8Array(fileBuffer)
+        
+        // Use pdfjs-dist to extract text
+        const loadingTask = pdfjsLib.getDocument({ data: uint8Array })
+        const pdfDocument = await loadingTask.promise
+        pageCount = pdfDocument.numPages
+        console.log('PDF loaded, pages:', pageCount)
+        
+        let fullText = ''
+        for (let i = 1; i <= pageCount; i++) {
+          const page = await pdfDocument.getPage(i)
+          const textContent = await page.getTextContent()
+          const pageText = textContent.items
+            .map((item: any) => item.str)
+            .join(' ')
+          fullText += pageText + '\n'
         }
-      } while (runStatus.status === 'queued' || runStatus.status === 'in_progress')
-
-      if (runStatus.status !== 'completed') {
-        throw new Error(`OpenAI assistant run failed: ${runStatus.status}`)
+        
+        extractedText = fullText.trim()
+        console.log('PDF text extracted, pages:', pageCount, 'text length:', extractedText.length)
+        
+        if (!extractedText || extractedText.trim().length === 0) {
+          console.warn('PDF extraction returned empty text, but no error was thrown')
+        }
+      } else if (document.file_type === 'docx') {
+        console.log('Extracting text from DOCX...', {
+          bufferSize: fileBuffer.length,
+          fileType: document.file_type,
+        })
+        const result = await mammoth.extractRawText({ buffer: fileBuffer })
+        extractedText = result.value || ''
+        // Estimate page count (roughly 500 words per page)
+        const wordCount = extractedText.split(/\s+/).filter((w: string) => w.length > 0).length
+        pageCount = Math.max(1, Math.ceil(wordCount / 500))
+        console.log('DOCX text extracted, estimated pages:', pageCount, 'text length:', extractedText.length)
+        
+        if (!extractedText || extractedText.trim().length === 0) {
+          console.warn('DOCX extraction returned empty text, but no error was thrown')
+        }
+      } else if (document.file_type === 'epub') {
+        console.log('Extracting text from EPUB using epubjs...', {
+          bufferSize: fileBuffer.length,
+          fileType: document.file_type,
+        })
+        
+        // epubjs needs a URL, so we'll write to a temp file and use file:// URL
+        const tempFilePath = join(tmpdir(), `epub-${documentId}-${Date.now()}.epub`)
+        const fileUrl = `file://${tempFilePath}`
+        
+        try {
+          // Write buffer to temporary file
+          await writeFile(tempFilePath, fileBuffer)
+          
+          // Create book from file URL
+          const book = new Book(fileUrl)
+          
+          // Wait for book to be ready
+          await book.ready
+          
+          // Get all sections from the spine
+          const spine = book.spine
+          let fullText = ''
+          
+          // epubjs spine has a 'spineItems' array we can iterate
+          // Use the spine's internal structure to get items
+          const spineLength = (spine as any).spineItems?.length || 0
+          
+          for (let i = 0; i < spineLength; i++) {
+            try {
+              const item = (spine as any).spineItems[i]
+              if (item && item.href) {
+                const section = await book.load(item.href)
+                if (section) {
+                  // Get the content - epubjs returns rendered content
+                  let content = ''
+                  if (typeof section === 'string') {
+                    content = section
+                  } else {
+                    // Try to extract text from the section object
+                    const sectionDoc = (section as any).document
+                    if (sectionDoc && sectionDoc.body) {
+                      content = sectionDoc.body.textContent || sectionDoc.body.innerHTML || ''
+                    } else {
+                      content = String(section)
+                    }
+                  }
+                  
+                  // Clean up HTML tags
+                  const text = content
+                    .replace(/<[^>]*>/g, ' ')
+                    .replace(/\s+/g, ' ')
+                    .trim()
+                  
+                  if (text) {
+                    fullText += text + '\n\n'
+                  }
+                }
+              }
+            } catch (sectionError: any) {
+              console.warn('Error loading EPUB section:', sectionError.message)
+              // Continue with other sections
+            }
+          }
+          
+          extractedText = fullText.trim()
+          
+          // Estimate page count
+          const wordCount = extractedText.split(/\s+/).filter((w: string) => w.length > 0).length
+          pageCount = Math.max(1, Math.ceil(wordCount / 500))
+          console.log('EPUB text extracted, estimated pages:', pageCount, 'text length:', extractedText.length)
+        } finally {
+          // Clean up temporary file
+          try {
+            await unlink(tempFilePath)
+          } catch (cleanupError) {
+            console.warn('Failed to delete temporary EPUB file:', cleanupError)
+          }
+        }
+      } else {
+        throw new Error(`Unsupported file type: ${document.file_type}`)
       }
-
-      // Get the messages
-      const messages = await openai.beta.threads.messages.list(thread.id)
-      const assistantMessage = messages.data.find(msg => msg.role === 'assistant')
-      extractedText = assistantMessage?.content[0]?.type === 'text' 
-        ? assistantMessage.content[0].text.value 
-        : ''
-      
-      // Clean up: Delete assistant and file
-      try {
-        await openai.beta.assistants.delete(assistant.id)
-        await openai.files.delete(fileId)
-        console.log('Cleaned up OpenAI resources')
-      } catch (cleanupError) {
-        console.warn('Failed to cleanup OpenAI resources:', cleanupError)
-      }
-
-      if (!extractedText || extractedText.trim().length === 0) {
-        throw new Error('OpenAI returned empty text')
-      }
-
-      // Estimate page count (roughly 500 words per page)
-      const wordCount = extractedText.split(/\s+/).filter((w: string) => w.length > 0).length
-      pageCount = Math.max(1, Math.ceil(wordCount / 500))
-      
-      console.log('Text extracted using OpenAI, estimated pages:', pageCount, 'text length:', extractedText.length)
     } catch (extractError: any) {
       console.error('Text extraction error:', extractError)
       await serviceClient
@@ -244,28 +271,41 @@ export async function processDocumentAction(documentId: string) {
     // Detect language using OpenAI
     let detectedLanguage = 'en'
     try {
-      const sample = extractedText.slice(0, 1000).trim()
-      if (sample && sample.length >= 10) {
-        const langResponse = await openai.chat.completions.create({
-          model: 'gpt-4o-mini',
-          temperature: 0.1,
-          max_tokens: 10,
-          messages: [
-            {
-              role: 'system',
-              content:
-                'You are a language detection assistant. Identify the primary language of the given text and respond with only the ISO 639-1 language code (e.g., "en" for English).',
+      const OPENAI_API_KEY = process.env.OPENAI_API_KEY
+      if (OPENAI_API_KEY) {
+        const sample = extractedText.slice(0, 1000).trim()
+        if (sample && sample.length >= 10) {
+          const response = await fetch('https://api.openai.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              Authorization: `Bearer ${OPENAI_API_KEY}`,
             },
-            {
-              role: 'user',
-              content: `What is the language of this text? Respond with only the ISO 639-1 language code:\n\n${sample}`,
-            },
-          ],
-        })
+            body: JSON.stringify({
+              model: 'gpt-4o-mini',
+              temperature: 0.1,
+              max_tokens: 10,
+              messages: [
+                {
+                  role: 'system',
+                  content:
+                    'You are a language detection assistant. Identify the primary language of the given text and respond with only the ISO 639-1 language code (e.g., "en" for English).',
+                },
+                {
+                  role: 'user',
+                  content: `What is the language of this text? Respond with only the ISO 639-1 language code:\n\n${sample}`,
+                },
+              ],
+            }),
+          })
 
-        const detected = langResponse.choices?.[0]?.message?.content?.trim().toLowerCase()
-        if (detected && detected.length === 2) {
-          detectedLanguage = detected
+          if (response.ok) {
+            const data = await response.json()
+            const detected = data.choices?.[0]?.message?.content?.trim().toLowerCase()
+            if (detected && detected.length === 2) {
+              detectedLanguage = detected
+            }
+          }
         }
       }
     } catch (langError: any) {
@@ -326,3 +366,4 @@ export async function processDocumentAction(documentId: string) {
     throw error
   }
 }
+
