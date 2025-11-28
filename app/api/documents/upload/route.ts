@@ -90,6 +90,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Upload file to S3
+    let documentPublicUrl: string
     try {
       // Validate S3 configuration before attempting upload
       const s3Bucket = process.env.AWS_S3_BUCKET
@@ -115,14 +116,14 @@ export async function POST(req: NextRequest) {
       console.log('Document uploaded to S3, key:', s3Key)
 
       // Get public URL (CloudFront or S3)
-      const publicUrl = getPublicUrl('documents', s3Key)
-      console.log('Document public URL:', publicUrl)
+      documentPublicUrl = getPublicUrl('documents', s3Key)
+      console.log('Document public URL:', documentPublicUrl)
 
       // Update document with URL and trigger processing
       const { error: updateError } = await serviceClient
         .from('documents')
         .update({
-          file_url: publicUrl,
+          file_url: documentPublicUrl,
           status: 'processing',
         })
         .eq('id', document.id)
@@ -132,7 +133,7 @@ export async function POST(req: NextRequest) {
         throw new Error(`Failed to update document: ${updateError.message}`)
       }
 
-      console.log('Document record updated with file URL')
+      console.log('Document record updated with file URL:', documentPublicUrl)
     } catch (uploadError: any) {
       console.error('S3 upload error:', {
         error: uploadError.message,
@@ -159,36 +160,39 @@ export async function POST(req: NextRequest) {
       )
     }
 
-    // Process document text extraction in background (Server Action with Node.js runtime)
+    // Process document text extraction in background (Node.js runtime)
     // This uses pdf-parse, mammoth, and epub2 which work properly in Node.js runtime
-    console.log('Triggering document processing (Server Action):', {
+    console.log('Triggering document processing:', {
       documentId: document.id,
-      fileUrl: document.file_url,
+      fileUrl: documentPublicUrl,
     })
     
-    // Process in background - don't await to return quickly to user
-    // Add a small delay for S3 eventual consistency
-    const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
-    
-    delay(1000).then(() => {
-      return processDocumentAction(document.id)
-    })
-      .then((result) => {
+    // Process in background - ensure it runs even after response is sent
+    // Use a fire-and-forget pattern that works in Vercel's serverless environment
+    ;(async () => {
+      try {
+        // Small delay for S3 eventual consistency
+        await new Promise(resolve => setTimeout(resolve, 2000))
+        
+        console.log('Starting background document processing for:', document.id)
+        const result = await processDocumentAction(document.id)
         console.log('Document processed successfully:', {
           documentId: result.documentId,
           success: result.success,
           textLength: result.textLength,
           chunksCount: result.chunksCount,
         })
-      })
-      .catch((error) => {
+      } catch (error: any) {
         console.error('Document processing error:', {
           documentId: document.id,
           error: error.message,
           stack: error.stack,
         })
-        // Status is already updated to error in the Server Action
-      })
+        // Status is already updated to error in processDocumentAction
+      }
+    })().catch((error) => {
+      console.error('Unhandled error in background processing:', error)
+    })
 
     return NextResponse.json({ documentId: document.id })
   } catch (error: any) {

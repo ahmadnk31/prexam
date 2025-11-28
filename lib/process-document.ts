@@ -84,19 +84,33 @@ export async function processDocumentAction(documentId: string) {
 
     try {
       if (document.file_type === 'pdf') {
-        console.log('Extracting text from PDF...')
+        console.log('Extracting text from PDF...', {
+          bufferSize: fileBuffer.length,
+          fileType: document.file_type,
+        })
         const data = await pdfParse(fileBuffer)
-        extractedText = data.text
+        extractedText = data.text || ''
         pageCount = data.numpages || 1
         console.log('PDF text extracted, pages:', pageCount, 'text length:', extractedText.length)
+        
+        if (!extractedText || extractedText.trim().length === 0) {
+          console.warn('PDF extraction returned empty text, but no error was thrown')
+        }
       } else if (document.file_type === 'docx') {
-        console.log('Extracting text from DOCX...')
+        console.log('Extracting text from DOCX...', {
+          bufferSize: fileBuffer.length,
+          fileType: document.file_type,
+        })
         const result = await mammoth.extractRawText({ buffer: fileBuffer })
-        extractedText = result.value
+        extractedText = result.value || ''
         // Estimate page count (roughly 500 words per page)
         const wordCount = extractedText.split(/\s+/).filter((w: string) => w.length > 0).length
         pageCount = Math.max(1, Math.ceil(wordCount / 500))
         console.log('DOCX text extracted, estimated pages:', pageCount, 'text length:', extractedText.length)
+        
+        if (!extractedText || extractedText.trim().length === 0) {
+          console.warn('DOCX extraction returned empty text, but no error was thrown')
+        }
       } else if (document.file_type === 'epub') {
         console.log('Extracting text from EPUB...')
         // epub2 uses a callback-based API
