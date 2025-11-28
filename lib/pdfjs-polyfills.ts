@@ -2,7 +2,9 @@
 // pdfjs-dist uses these at module evaluation time, so they must be available immediately
 // This file must be imported BEFORE any pdfjs-dist imports
 
-if (typeof globalThis.DOMMatrix === 'undefined') {
+// Execute immediately at module load time (not in a function)
+(function setupPolyfills() {
+  if (typeof globalThis.DOMMatrix === 'undefined') {
   // DOMMatrix polyfill for Node.js
   class DOMMatrixPolyfill {
     a: number = 1
@@ -63,6 +65,12 @@ if (typeof globalThis.DOMMatrix === 'undefined') {
       }
     } as any
   }
+  }
+})()
+
+// Verify polyfills are set up
+if (typeof globalThis.DOMMatrix === 'undefined') {
+  throw new Error('Failed to set up DOMMatrix polyfill')
 }
 
 // Export nothing - this file is just for side effects
