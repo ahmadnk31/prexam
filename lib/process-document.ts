@@ -1,10 +1,14 @@
+'use server'
+
 import { createServiceClient } from '@/supabase/service'
 import { createClient } from '@/supabase/server'
+import { detectLanguage } from '@/lib/language-detection'
+
+export const runtime = 'nodejs'
 
 /**
  * Process a document: download, extract text, chunk, and detect language
- * This runs in Node.js runtime using unpdf (for PDFs) and epubjs (pure JavaScript libraries)
- * Called from route handlers that have `export const runtime = 'nodejs'`
+ * This is a Server Action that runs in Node.js runtime using unpdf (for PDFs) and mammoth (for DOCX)
  */
 
 export async function processDocumentAction(documentId: string) {
@@ -160,46 +164,10 @@ export async function processDocumentAction(documentId: string) {
       }
     }
 
-    // Detect language using OpenAI
+    // Detect language using the detectLanguage helper
     let detectedLanguage = 'en'
     try {
-      const OPENAI_API_KEY = process.env.OPENAI_API_KEY
-      if (OPENAI_API_KEY) {
-        const sample = extractedText.slice(0, 1000).trim()
-        if (sample && sample.length >= 10) {
-          const response = await fetch('https://api.openai.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${OPENAI_API_KEY}`,
-            },
-            body: JSON.stringify({
-              model: 'gpt-4o-mini',
-              temperature: 0.1,
-              max_tokens: 10,
-              messages: [
-                {
-                  role: 'system',
-                  content:
-                    'You are a language detection assistant. Identify the primary language of the given text and respond with only the ISO 639-1 language code (e.g., "en" for English).',
-                },
-                {
-                  role: 'user',
-                  content: `What is the language of this text? Respond with only the ISO 639-1 language code:\n\n${sample}`,
-                },
-              ],
-            }),
-          })
-
-          if (response.ok) {
-            const data = await response.json()
-            const detected = data.choices?.[0]?.message?.content?.trim().toLowerCase()
-            if (detected && detected.length === 2) {
-              detectedLanguage = detected
-            }
-          }
-        }
-      }
+      detectedLanguage = await detectLanguage(extractedText)
     } catch (langError: any) {
       console.warn('Language detection failed, using default (en):', langError.message)
       // Don't fail if language detection fails
