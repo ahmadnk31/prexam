@@ -1,3 +1,4 @@
+"use server"
 import { createServiceClient } from '@/supabase/service'
 import { createClient } from '@/supabase/server'
 import mammoth from 'mammoth'
@@ -100,8 +101,8 @@ export async function processDocumentAction(documentId: string) {
         const result = await extractText(uint8Array, { mergePages: true })
         
         extractedText = result.text || ''
-        // Get page count from result if available
-        pageCount = result.pages?.length || 1
+        // Get page count from result
+        pageCount = result.totalPages || 1
         
         console.log('PDF text extracted:', {
           pages: pageCount,
