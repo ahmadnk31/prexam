@@ -4,7 +4,7 @@ import { createServiceClient } from '@/supabase/service'
 import { createClient } from '@/supabase/server'
 import { detectLanguage } from '@/lib/language-detection'
 
-export const runtime = 'nodejs'
+
 
 /**
  * Process a document: download, extract text, chunk, and detect language
