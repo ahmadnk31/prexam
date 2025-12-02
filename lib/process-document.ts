@@ -1,12 +1,5 @@
-// IMPORTANT: Import polyfills FIRST before any other imports
-// This ensures DOMMatrix and other DOM APIs are available before pdfjs-dist is loaded
-import './pdfjs-polyfills'
-
 import { createServiceClient } from '@/supabase/service'
 import { createClient } from '@/supabase/server'
-// Use legacy build for Node.js - it includes necessary polyfills
-// @ts-ignore - legacy build path may not have complete types
-import * as pdfjsLib from 'pdfjs-dist/legacy/build/pdf.mjs'
 import mammoth from 'mammoth'
 import { Book } from 'epubjs'
 import { Buffer } from 'buffer'
@@ -16,18 +9,9 @@ import { tmpdir } from 'os'
 
 /**
  * Process a document: download, extract text, chunk, and detect language
- * This runs in Node.js runtime using pdfjs-dist legacy build and epubjs (pure JavaScript libraries)
+ * This runs in Node.js runtime using unpdf (for PDFs) and epubjs (pure JavaScript libraries)
  * Called from route handlers that have `export const runtime = 'nodejs'`
  */
-
-// Configure pdfjs-dist worker for Node.js
-if (typeof window === 'undefined') {
-  // For Node.js, use local worker file from node_modules
-  // Use file:// URL pointing to the worker in node_modules
-  const path = require('path')
-  const workerPath = path.join(process.cwd(), 'node_modules', 'pdfjs-dist', 'legacy', 'build', 'pdf.worker.min.mjs')
-  pdfjsLib.GlobalWorkerOptions.workerSrc = `file://${workerPath}`
-}
 
 export async function processDocumentAction(documentId: string) {
   const serviceClient = createServiceClient()
@@ -103,57 +87,23 @@ export async function processDocumentAction(documentId: string) {
 
     try {
       if (document.file_type === 'pdf') {
-        console.log('Extracting text from PDF using pdfjs-dist...', {
+        console.log('Extracting text from PDF using unpdf...', {
           bufferSize: fileBuffer.length,
           fileType: document.file_type,
-          workerSrc: pdfjsLib.GlobalWorkerOptions.workerSrc,
         })
         
-        // Convert Buffer to Uint8Array (pdfjs-dist requires Uint8Array, not Buffer)
+        // Use unpdf - a simpler wrapper around pdfjs-dist that works better in serverless
+        const { extractText } = await import('unpdf')
         const uint8Array = new Uint8Array(fileBuffer)
-        console.log('Converted to Uint8Array, length:', uint8Array.length)
         
-        // Use pdfjs-dist to extract text
-        console.log('Calling pdfjsLib.getDocument...')
-        const loadingTask = pdfjsLib.getDocument({ 
-          data: uint8Array,
-          verbosity: 0, // Reduce logging
-        })
+        console.log('Calling unpdf.extractText...')
+        const result = await extractText(uint8Array, { mergePages: true })
         
-        console.log('Waiting for PDF document to load...')
-        const pdfDocument = await loadingTask.promise
-        pageCount = pdfDocument.numPages
-        console.log('PDF loaded successfully, pages:', pageCount)
+        extractedText = result.text || ''
+        // Get page count from result if available
+        pageCount = result.pages?.length || 1
         
-        let fullText = ''
-        for (let i = 1; i <= pageCount; i++) {
-          console.log(`Extracting text from page ${i}/${pageCount}...`)
-          try {
-            const page = await pdfDocument.getPage(i)
-            const textContent = await page.getTextContent()
-            console.log(`Page ${i} text items count:`, textContent.items.length)
-            
-            const pageText = textContent.items
-              .map((item: any) => {
-                // Handle different item types
-                if (typeof item === 'string') return item
-                if (item && typeof item.str === 'string') return item.str
-                if (item && item.text) return item.text
-                return ''
-              })
-              .filter((text: string) => text.length > 0)
-              .join(' ')
-            
-            console.log(`Page ${i} extracted text length:`, pageText.length)
-            fullText += pageText + '\n'
-          } catch (pageError: any) {
-            console.error(`Error extracting text from page ${i}:`, pageError.message)
-            // Continue with other pages
-          }
-        }
-        
-        extractedText = fullText.trim()
-        console.log('PDF text extraction completed:', {
+        console.log('PDF text extracted:', {
           pages: pageCount,
           textLength: extractedText.length,
           first100Chars: extractedText.substring(0, 100),

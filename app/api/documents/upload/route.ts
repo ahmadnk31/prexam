@@ -1,7 +1,3 @@
-// IMPORTANT: Import polyfills FIRST before any other imports
-// This ensures DOMMatrix and other DOM APIs are available before pdfjs-dist is loaded
-import '@/lib/pdfjs-polyfills'
-
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/supabase/server'
 import { createServiceClient } from '@/supabase/service'
